@@ -24,6 +24,19 @@ Open the displayed local URL, accept the research-use gate, then:
 3. Record verified findings in the Evidence tab.
 4. Review and export the consensus classification in the Report tab.
 
+## Portable offline Windows edition
+
+The portable Windows package includes an isolated Python runtime and locked application dependencies. It does not require a separate Python installation or an internet connection after the ZIP has been created.
+
+1. Extract the complete `CUS-AI-reader-offline-windows-x64-v0.3.0.zip` package.
+2. Double-click `Start CUS AI Reader.cmd`.
+3. Use the browser page opened at `127.0.0.1`.
+4. Close the launcher window to stop the local server.
+
+The launcher binds Streamlit to the loopback interface only, disables Streamlit usage telemetry, and prevents the file watcher from starting. Uploaded media remains in the active local process. Reports are written only when the user downloads them.
+
+Maintainers can reproduce the portable ZIP on Windows with Python 3.12 by running `scripts/build_portable_windows.ps1`. The build uses the official Python 3.12.10 embedded distribution, a locked dependency file, a runtime import check, and SHA256 manifests.
+
 ## Run with Docker
 
 ```powershell
@@ -71,6 +84,7 @@ The HUS Diagnostic application was used to cross-check the four-step branching a
 - Technical QC: implemented
 - Consensus rule engine: implemented and tested
 - Structured export: implemented
+- Portable offline Windows x64 launcher and reproducible bundle: implemented
 - Diagnostic model weights: not available and not represented as complete
 - External clinical validation: not started
 - Regulatory authorization: not started

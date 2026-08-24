@@ -27,6 +27,14 @@ Do not expose this prototype on a public internet URL with clinical media. A pub
 
 If the system is deployed inside a hospital network, use a reverse proxy with TLS, authentication, upload-size and file-type controls, malware scanning, request timeouts, and an isolated inference worker. Run the container as a non-root user with a read-only filesystem and no outbound network access unless a reviewed service requires it.
 
+## Portable offline Windows boundary
+
+The portable launcher sets `CUS_AI_OFFLINE=1`, disables Streamlit usage telemetry, and binds the server to `127.0.0.1`. It does not make the computer a governed clinical environment. The operating system, browser cache, downloads folder, endpoint backup, antivirus, crash reporting, and local user permissions remain outside the application boundary.
+
+The application has no database and does not intentionally persist uploaded media. Reports persist only when a user downloads them. Video decoding creates a temporary file and deletes it after sequential frame processing. A local attacker, malware, endpoint administrator, memory dump, swap file, or forensic tool may still access data while it is processed.
+
+Institutional use still requires approved storage locations, endpoint encryption, managed accounts, patching, malware controls, de-identification verification, retention rules, and an incident-response process. The portable package is unsigned. Verify the distributed ZIP and internal manifest hashes before use.
+
 ## External AI services
 
 Do not send neonatal images to a general-purpose external vision or language service unless the institution has approved the service, contract, data location, retention policy, audit controls, and health-information terms. A service API key does not establish clinical validity or privacy compliance.
