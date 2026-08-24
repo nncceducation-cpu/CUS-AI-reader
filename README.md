@@ -28,14 +28,16 @@ Open the displayed local URL, accept the research-use gate, then:
 
 The portable Windows package includes an isolated Python runtime and locked application dependencies. It does not require a separate Python installation or an internet connection after the ZIP has been created.
 
-1. Extract the complete `CUS-AI-reader-offline-windows-x64-v0.3.0.zip` package.
+1. Extract the complete `CUS-AI-reader-offline-windows-x64-v0.3.1.zip` package.
 2. Double-click `Start CUS AI Reader.cmd`.
 3. Use the browser page opened at `127.0.0.1`.
 4. Close the launcher window to stop the local server.
 
+If the browser does not open automatically, keep the launcher window open and double-click `CUS AI Reader Local Page.url`. Startup details are normally written to `%LOCALAPPDATA%\CUS-AI-reader\startup.log`, with the Windows temporary folder used as a fallback.
+
 The launcher binds Streamlit to the loopback interface only, disables Streamlit usage telemetry, and prevents the file watcher from starting. Uploaded media remains in the active local process. Reports are written only when the user downloads them.
 
-Maintainers can reproduce the portable ZIP on Windows with Python 3.12 by running `scripts/build_portable_windows.ps1`. The build uses the official Python 3.12.10 embedded distribution, a locked dependency file, a runtime import check, and SHA256 manifests.
+Maintainers can reproduce the portable ZIP on Windows with Python 3.12 by running `scripts/build_portable_windows.ps1`. The build uses the official Python 3.12.10 embedded distribution, a locked dependency file, a full launcher startup check, and SHA256 manifests.
 
 ## Run with Docker
 

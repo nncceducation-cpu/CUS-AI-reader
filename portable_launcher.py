@@ -7,6 +7,7 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -15,6 +16,32 @@ import webbrowser
 
 APP_ROOT = Path(__file__).resolve().parent
 DEFAULT_PORT = 8501
+
+
+def diagnostic_log_path() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    candidates = []
+    if local_app_data:
+        candidates.append(Path(local_app_data) / "CUS-AI-reader")
+    candidates.append(Path(tempfile.gettempdir()) / "CUS-AI-reader")
+    for log_directory in candidates:
+        try:
+            log_directory.mkdir(parents=True, exist_ok=True)
+            return log_directory / "startup.log"
+        except OSError:
+            continue
+    return APP_ROOT / "CUS-AI-reader-startup.log"
+
+
+def report_status(message: str) -> None:
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{timestamp}] {message}"
+    print(line, flush=True)
+    try:
+        with diagnostic_log_path().open("a", encoding="utf-8") as log_file:
+            log_file.write(line + "\n")
+    except OSError:
+        pass
 
 
 def port_is_available(port: int) -> bool:
@@ -76,6 +103,25 @@ def app_is_ready(port: int) -> bool:
         return False
 
 
+def open_local_browser(local_url: str) -> bool:
+    """Open the local page with the Windows shell before using Python's fallback."""
+    if os.name == "nt" and hasattr(os, "startfile"):
+        try:
+            os.startfile(local_url)  # type: ignore[attr-defined]
+            report_status("Opened the local page with the Windows default browser.")
+            return True
+        except OSError as exc:
+            report_status(f"Windows could not open the default browser: {exc}")
+    try:
+        opened = bool(webbrowser.open(local_url, new=2))
+    except Exception as exc:
+        report_status(f"Python browser fallback failed: {exc}")
+        return False
+    if opened:
+        report_status("Opened the local page with the Python browser fallback.")
+    return opened
+
+
 def check_installation() -> int:
     required_modules = (
         "streamlit",
@@ -103,12 +149,13 @@ def check_installation() -> int:
     return 0
 
 
-def run_app(open_browser: bool = True) -> int:
+def run_app(open_browser: bool = True, exit_after_ready: bool = False) -> int:
     port = choose_local_port()
     local_url = f"http://127.0.0.1:{port}"
-    print("CUS AI Reader local offline edition")
-    print(f"Starting at {local_url}")
-    print("Close this window or press Ctrl+C to stop the app.")
+    report_status("CUS AI Reader local offline edition")
+    report_status(f"Starting at {local_url}")
+    report_status(f"Startup log: {diagnostic_log_path()}")
+    report_status("Close this window or press Ctrl+C to stop the app.")
 
     process = subprocess.Popen(
         streamlit_command(port),
@@ -116,22 +163,43 @@ def run_app(open_browser: bool = True) -> int:
         env=offline_environment(port),
     )
     deadline = time.monotonic() + 90
+    ready = False
     while process.poll() is None and time.monotonic() < deadline:
         if app_is_ready(port):
-            if open_browser:
-                webbrowser.open(local_url)
+            ready = True
             break
         time.sleep(0.25)
-    else:
+
+    if not ready:
         if process.poll() is None:
             process.terminate()
             process.wait(timeout=10)
-        print("The local app did not become ready within 90 seconds.")
+        report_status("The local app did not become ready within 90 seconds.")
         return 1
 
+    report_status(f"The local app is ready at {local_url}")
+    if exit_after_ready:
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+        report_status("Full launcher startup check passed.")
+        return 0
+
+    if open_browser and not open_local_browser(local_url):
+        report_status(
+            "The browser did not open automatically. Double-click 'CUS AI Reader Local Page.url' "
+            f"or paste {local_url} into a browser."
+        )
+
     try:
-        return int(process.wait())
+        exit_code = int(process.wait())
+        report_status(f"The local server stopped with exit code {exit_code}.")
+        return exit_code
     except KeyboardInterrupt:
+        report_status("Stopping the local server.")
         process.terminate()
         try:
             process.wait(timeout=10)
@@ -144,10 +212,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Start the local-only CUS AI Reader")
     parser.add_argument("--check", action="store_true", help="verify portable dependencies and exit")
     parser.add_argument("--no-browser", action="store_true", help="do not open the default web browser")
+    parser.add_argument(
+        "--startup-check",
+        action="store_true",
+        help="start the local server, verify health, stop it, and exit",
+    )
     args = parser.parse_args()
     if args.check:
         return check_installation()
-    return run_app(open_browser=not args.no_browser)
+    return run_app(open_browser=not args.no_browser, exit_after_ready=args.startup_check)
 
 
 if __name__ == "__main__":

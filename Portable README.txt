@@ -19,6 +19,13 @@ Stop the app
 ------------
 Close the black launcher window or press Ctrl+C in that window.
 
+If the browser does not open
+----------------------------
+Keep the launcher window open, then double-click "CUS AI Reader Local Page.url". You
+can also paste http://127.0.0.1:8501 into Chrome or Edge. Startup details are normally
+saved in %LOCALAPPDATA%\CUS-AI-reader\startup.log, with the Windows temporary folder
+used as a fallback.
+
 Data handling
 -------------
 The server listens only on this computer. Uploaded files are processed in the active

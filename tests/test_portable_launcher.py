@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from portable_launcher import offline_environment, streamlit_command
+from pathlib import Path
+
+from portable_launcher import diagnostic_log_path, offline_environment, streamlit_command
 
 
 def test_offline_environment_binds_to_loopback_and_disables_telemetry():
@@ -20,3 +22,8 @@ def test_streamlit_command_uses_local_only_server_settings():
     assert "--server.port=8765" in command
     assert "--server.headless=true" in command
     assert "--browser.gatherUsageStats=false" in command
+
+
+def test_diagnostic_log_has_a_stable_filename():
+    assert isinstance(diagnostic_log_path(), Path)
+    assert diagnostic_log_path().name in {"startup.log", "CUS-AI-reader-startup.log"}

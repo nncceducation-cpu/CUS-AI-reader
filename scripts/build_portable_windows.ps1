@@ -16,7 +16,7 @@ if (-not $CacheDirectory) {
     $CacheDirectory = Join-Path $repoRoot ".portable-cache"
 }
 
-$appVersion = "0.3.0"
+$appVersion = "0.3.1"
 $bundleName = "CUS-AI-reader-offline-windows-x64-v$appVersion"
 $stageContainer = Join-Path ([System.IO.Path]::GetTempPath()) "CUSAI-portable-build"
 $stageRoot = Join-Path $stageContainer $bundleName
@@ -94,6 +94,7 @@ $filesToCopy = @(
     "app.py"
     "portable_launcher.py"
     "Start CUS AI Reader.cmd"
+    "CUS AI Reader Local Page.url"
     "Portable README.txt"
     "README.md"
     "pyproject.toml"
@@ -111,6 +112,12 @@ Write-Host "Running the portable dependency check..."
 & (Join-Path $runtimePath "python.exe") (Join-Path $stageRoot "portable_launcher.py") --check
 if ($LASTEXITCODE -ne 0) {
     throw "Portable dependency verification failed."
+}
+
+Write-Host "Running the complete launcher startup check..."
+& (Join-Path $runtimePath "python.exe") (Join-Path $stageRoot "portable_launcher.py") --startup-check --no-browser
+if ($LASTEXITCODE -ne 0) {
+    throw "Portable launcher startup verification failed."
 }
 
 $manifestPath = Join-Path $stageRoot "MANIFEST-SHA256.txt"
