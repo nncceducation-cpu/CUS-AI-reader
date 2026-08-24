@@ -160,10 +160,10 @@
 <header>
   <p class="eyebrow">CUS AI Reader · v0.6.0 · research use only</p>
   <h1>The scoring path between the model and the grade, rebuilt</h1>
-  <p class="lede">Eight defects sat between the model output and the consensus grade. Two of them
-  meant the tool could never produce a grade at all. This release fixes the path,
-  adds calibration and anatomic constraints, and pins every clinical rule to the
-  2021 Canadian consensus paper.</p>
+  <p class="lede">Ten defects sat between the model output and the consensus grade. Two meant the
+  tool could never produce a grade at all, and one meant a real ultrasound sweep would not load.
+  This release fixes the path, adds calibration and anatomic constraints, pins every clinical rule
+  to the 2021 Canadian consensus paper, and lets the tool learn from being corrected.</p>
 </header>
 
 <h2>What was broken</h2>
@@ -427,26 +427,76 @@ threshold produced on the same scores.</p>
   <div><b>cus_ai/model.py</b><span>Calibrate, plane-gate, aggregate, repair, in that order.</span></div>
   <div><b>scripts/fit_operating_point.py</b><span>Fit calibration and thresholds from your labelled studies.</span></div>
   <div><b>scripts/benchmark_aggregation.py</b><span>Reproduce the table above.</span></div>
+  <div><b>cus_ai/learning.py</b><span>New. Correction log, incremental refitting, and the promotion gate.</span></div>
+  <div><b>cus_ai/media.py</b><span>Frames held grayscale at a working size, so real sweeps fit in memory.</span></div>
   <div><b>docs/AI_SCORING_ACCURACY.md</b><span>Full reasoning, defect by defect.</span></div>
-  <div><b>tests/</b><span>59 tests, up from 29. Every clinical rule pinned to its source.</span></div>
+  <div><b>docs/LEARNING_FROM_CORRECTIONS.md</b><span>How the correction loop works and what stops it going wrong.</span></div>
+  <div><b>tests/</b><span>74 tests, up from 29. Every clinical rule pinned to its source.</span></div>
 </div>
 
-<h2>Getting it onto the repo</h2>
+<h2>Two more things shipped after the scoring rebuild</h2>
+<p class="sub">Both found by testing against the real pilot clips rather than by reasoning about the code.</p>
 
-<ol class="steps">
-  <li>Open the <code>CUS-AI-reader-v0.6.0</code> folder that has been written into your CUS AI folder.</li>
-  <li>Double-click <code>PUSH-TO-GITHUB.bat</code>. It clones, applies the patch on a branch called
-      <code>ai-scoring-v0.6.0</code>, and pushes. If it stops at authentication, run <code>gh auth login</code>
-      once and try again.</li>
-  <li>Open the repo on GitHub and raise the pull request from that branch.</li>
-  <li>Alternatives, if you prefer them, are in <code>HOW-TO-SHIP.md</code>: a git bundle, or a
-      straight file copy over your clone.</li>
-</ol>
+<div class="panel">
+  <div class="defect">
+    <div class="num">9</div>
+    <div>
+      <h4>Real sweeps would not load</h4>
+      <p>Every decoded frame was held as full-size RGB. The pilot sweeps are 1024&times;1024 and run
+      from 112 to 2011 frames, so one clip costs between 0.35 and 5.6 GB and a coronal plus sagittal
+      pair is 2 to 5 GB before the app caches a second copy. Across all 43 clips that is 88 GB. It
+      killed the test machine outright on the first real sweep.</p>
+      <p class="fix"><b>Fixed.</b> Frames are stored grayscale with the longest side bounded to 512,
+      which is the form the model and the quality metrics already consumed. Measured on a real
+      530-frame sweep: 1.67 GB becomes 139 MB, decoded in about a second, every frame still processed.</p>
+    </div>
+  </div>
+  <div class="defect">
+    <div class="num">10</div>
+    <div>
+      <h4>The tool could not learn from being corrected</h4>
+      <p>Every correction a reader made was discarded. The shipped thresholds stayed shipped.</p>
+      <p class="fix"><b>Added.</b> The AI proposes a grade, the reader corrects it, and the decision
+      thresholds and calibration are refitted from that site's own reads. Against a deliberately
+      miscalibrated detector, scored on 80 studies never used for fitting, agreement rose from
+      <b>41% to 96%</b> after 60 corrections.</p>
+    </div>
+  </div>
+</div>
 
-<p>Verify before merging:</p>
-<pre>python -m pip install -r requirements-dev.txt
-pytest                                        # 59 passing
-python scripts/benchmark_aggregation.py --sweep</pre>
+<h2>What stops the learning loop making things worse</h2>
+<p class="sub">The obvious implementation of "correct it and it improves" degrades accuracy while its own numbers improve.</p>
+
+<div class="callout">
+  <p><strong>Caught in testing.</strong> The first working version of the learner promoted new
+  parameters on <strong>pure random noise in every single trial.</strong> Given signal-free scores it
+  found the degenerate rule that calls every study positive, which scores well when misses are
+  weighted four times higher than false alarms. It would have looked like learning and pushed the
+  thresholds to extremes.</p>
+</div>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Risk</th><th>What prevents it</th></tr></thead>
+  <tbody>
+    <tr><td>Fitting and scoring on the same corrections</td>
+        <td>Leave-one-infant-out cross-validation. Studies from one infant are not independent, so whole infants are held out. Every number shown is out of fold.</td></tr>
+    <tr><td>Learning a degenerate rule from noise</td>
+        <td>A candidate must beat the incumbent, beat the best constant predictor, clear an out-of-fold AUC floor, and survive a permutation test against shuffled labels. Noise now promotes in about 1 run in 60.</td></tr>
+    <tr><td>Trading away sensitivity for specificity</td>
+        <td>An absolute floor the clinical lead sets, default 0.95, checked out of fold on at least 12 held-out positives. The 95% lower bound is displayed next to it, always.</td></tr>
+    <tr><td>Learning the reader's anchoring to the AI</td>
+        <td>Only grades recorded blind to the AI are eligible for fitting. Unblinded corrections are kept for audit and excluded from every fit.</td></tr>
+    <tr><td>Silent or unreviewable change</td>
+        <td>Append-only correction log, versioned parameters with rollback, and the shipped manifest is never rewritten.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Thresholds unlock at 8 corrections in the smaller class across at least 3 infants; calibration at
+20. Network weights are never touched, because they need thousands of examples. What the log gives
+you instead is an export button: every correction is a labelled row, and a few hundred of them is
+what makes a model trainable on Canadian consensus targets.</p>
 
 <h2>What comes next</h2>
 <p>This release fixes how model output becomes a grade. It does not train a model, and the
@@ -464,6 +514,13 @@ gap between the two is the whole remaining problem. The order that makes sense:<
       recommends.</li>
   <li>Only then set <code>"validated": true</code>.</li>
 </ol>
+
+<h2>Read further</h2>
+<div class="panel files">
+  <div><b><a href="https://github.com/nncceducation-cpu/CUS-AI-reader/blob/ai-scoring-v0.6.0/docs/AI_SCORING_ACCURACY.md">AI_SCORING_ACCURACY.md</a></b><span>Every scoring defect, the fix, and the evidence.</span></div>
+  <div><b><a href="https://github.com/nncceducation-cpu/CUS-AI-reader/blob/ai-scoring-v0.6.0/docs/LEARNING_FROM_CORRECTIONS.md">LEARNING_FROM_CORRECTIONS.md</a></b><span>How to use the correction loop, and what guards it.</span></div>
+  <div><b><a href="https://github.com/nncceducation-cpu/CUS-AI-reader/tree/ai-scoring-v0.6.0">The code</a></b><span>Branch ai-scoring-v0.6.0, 74 tests passing.</span></div>
+</div>
 
 <footer>
   <p>CUS AI Reader v0.6.0 · research, education, and quality improvement only · not a medical
