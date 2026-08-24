@@ -18,7 +18,7 @@ def build_report(
     ai_reference_agreement: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
-        "schema_version": "0.5.0",
+        "schema_version": "0.6.0",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "intended_use": "Research and quality improvement prototype only",
         "diagnostic_status": "Not a diagnostic report",

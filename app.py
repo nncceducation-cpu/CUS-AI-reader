@@ -323,6 +323,18 @@ def render_model_panel(frames: list[MediaFrame], media_summary: list[dict]) -> N
         ]
         with st.expander("Per-frame plane assignments"):
             st.dataframe(frame_rows, width="stretch", hide_index=True)
+        if not prediction.get("calibration_applied", False):
+            st.info(
+                "No probability calibration is installed. Raw network confidence is being compared "
+                "against the decision thresholds, so the numbers below read higher than they are. "
+                "Fit calibration with scripts/fit_operating_point.py on labelled studies."
+            )
+        consistency = prediction.get("consistency") or {}
+        if consistency.get("conflicts"):
+            st.warning(
+                "Model outputs contradicted the anatomy and were repaired before grading: "
+                + "; ".join(consistency["conflicts"])
+            )
         with st.expander("Study-level model probabilities"):
             st.json(
                 {
@@ -330,12 +342,76 @@ def render_model_panel(frames: list[MediaFrame], media_summary: list[dict]) -> N
                     "probabilities_by_plane": prediction["probabilities_by_plane"],
                 }
             )
+        if evidence_rows := prediction.get("label_evidence"):
+            with st.expander("How each finding was scored across frames"):
+                st.caption(
+                    "A finding must persist across consecutive frames and, where the anatomy "
+                    "allows, appear in a second plane. The score is the more conservative of the "
+                    "order statistic and the sustained-run statistic."
+                )
+                st.dataframe(
+                    [
+                        {
+                            "finding": name,
+                            "score": item["probability"],
+                            "order statistic": item["order_statistic"],
+                            "sustained run": item["run_statistic"],
+                            "frames required": item["frames_required"],
+                            "longest run": item["longest_run"],
+                            "planes": ", ".join(item["planes_used"]) or "none",
+                            "note": "; ".join(item["notes"]),
+                        }
+                        for name, item in sorted(evidence_rows.items())
+                    ],
+                    width="stretch",
+                    hide_index=True,
+                )
+        if repairs := consistency.get("repairs"):
+            with st.expander(f"Anatomic repairs applied ({len(repairs)})"):
+                st.dataframe(repairs, width="stretch", hide_index=True)
     if ai_result := st.session_state.get("ai_consensus_result"):
         st.markdown("### AI Canadian consensus grade")
         if ai_result["abstained"]:
-            st.warning("AI abstained from a final grade: " + "; ".join(ai_result["abstention_reasons"]))
+            st.warning(
+                "The AI withheld every domain: " + "; ".join(ai_result["abstention_reasons"])
+            )
         else:
-            st.success("AI produced an accepted research grade for expert comparison.")
+            reportable = ai_result.get("reportable_domains") or []
+            withheld = [
+                name
+                for name, status in (ai_result.get("domain_status") or {}).items()
+                if not status["reportable"]
+            ]
+            st.success(
+                f"AI released {len(reportable)} of "
+                f"{len(ai_result.get('domain_status') or {})} domains for expert comparison."
+            )
+            if withheld:
+                st.info("Withheld: " + ", ".join(sorted(withheld)))
+        if domain_status := ai_result.get("domain_status"):
+            with st.expander("Per-domain confidence and why anything was withheld"):
+                st.caption(
+                    "Uncertainty is scoped to the domain it affects. An unreadable posterior "
+                    "fossa withholds cerebellar hemorrhage without suppressing the hemorrhage "
+                    "grades from a clean coronal sweep."
+                )
+                st.dataframe(
+                    [
+                        {
+                            "domain": name,
+                            "released": status["reportable"],
+                            "confidence": status["confidence"],
+                            "reasons": "; ".join(status["reasons"]),
+                        }
+                        for name, status in sorted(domain_status.items())
+                    ],
+                    width="stretch",
+                    hide_index=True,
+                )
+        if caveats := ai_result.get("study_caveats"):
+            with st.expander(f"Study-level caveats ({len(caveats)})"):
+                for item in caveats:
+                    st.write(f"- {item}")
         result = ai_result["classification"]
         left_result, right_result = st.columns(2)
         with left_result:

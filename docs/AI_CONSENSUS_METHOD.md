@@ -7,8 +7,7 @@ The system does not train a direct black-box Canadian grade classifier. It estim
 The required model heads are:
 
 - coronal, sagittal or parasagittal, posterior fossa, other, and indeterminate plane
-- left and right hemorrhage presence
-- confinement to germinal matrix and intraventricular extension
+- left and right germinal matrix hemorrhage and intraventricular blood, from which hemorrhage presence and germinal matrix confinement are derived rather than detected separately
 - acute ventricular distension
 - AHW above 6 mm and above 10 mm
 - focal periventricular echogenicity and echogenicity relative to choroid plexus
@@ -20,7 +19,13 @@ Continuous AHW and VI landmark models should be added when native pixel spacing 
 
 ## Inference
 
-Every decoded frame enters the model in source order. Plane probabilities are stored for every frame. Lesion probabilities are aggregated only within accepted planes. A probability within the locked decision margin is converted to unknown, not to no. Missing required heads, missing planes, incomplete frame decoding, uncertain feature decisions, or missing serial evidence force abstention from a final grade. Partial research outputs remain visible for error analysis.
+Every decoded frame enters the model in source order. Plane probabilities are stored for every frame. Every frame probability is calibrated before it is used, because raw multi-task heads are over-confident and a fixed threshold applied to raw output does not sit where its number suggests.
+
+Lesion probabilities are aggregated only within the planes that show the relevant anatomy, and only from frames that passed the plane gate. Aggregation requires persistence rather than a single strong frame: the study score is the more conservative of the k-th largest frame probability and the highest level sustained across a run of consecutive frames. Frames are weighted by plane confidence and image quality. Findings that a second plane could confirm but did not are held back. See `AI_SCORING_ACCURACY.md` for the reasoning and the simulation that supports it.
+
+Aggregated probabilities then pass through an anatomic consistency check that enforces nested thresholds, containment hierarchies, and mutually exclusive grade families. Every repair is recorded.
+
+A probability within the locked decision margin is converted to unknown, not to no. Abstention is per domain. Missing heads, missing planes, an uncertain feature, or missing serial evidence withhold the domains they actually affect and leave the rest reportable, with the reason attached to each withheld domain. The study-level abstention flag fires only when no domain survives.
 
 ## Training and evaluation
 

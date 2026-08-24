@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CUS AI Reader v0.6.0</title></head><body>
+<style>
+  :root{
+    --bg:#f7f6f3; --panel:#ffffff; --ink:#1c1b19; --muted:#6b6862;
+    --line:#e2ded6; --line-soft:#efece6;
+    --accent:#8a3324; --accent-soft:#f4e9e6;
+    --good:#2f6b4f; --good-soft:#e8f1ec;
+    --bad:#9a3b2e; --warn:#8a6d1f; --warn-soft:#f7f0dd;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#16150f; --panel:#1f1e18; --ink:#eceae2; --muted:#a19c90;
+      --line:#332f26; --line-soft:#2a2720;
+      --accent:#d98b73; --accent-soft:#2c211c;
+      --good:#7ec49c; --good-soft:#1c2822;
+      --bad:#e08d7c; --warn:#d4b463; --warn-soft:#2a2417;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16150f; --panel:#1f1e18; --ink:#eceae2; --muted:#a19c90;
+    --line:#332f26; --line-soft:#2a2720;
+    --accent:#d98b73; --accent-soft:#2c211c;
+    --good:#7ec49c; --good-soft:#1c2822;
+    --bad:#e08d7c; --warn:#d4b463; --warn-soft:#2a2417;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:920px; margin:0 auto; padding:0 24px 96px}
+
+  header{padding:64px 0 40px; border-bottom:1px solid var(--line)}
+  .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 18px;
+  }
+  h1{
+    font-family:var(--serif); font-weight:600; font-size:clamp(2rem,5vw,3rem);
+    line-height:1.12; margin:0 0 16px; letter-spacing:-.015em;
+  }
+  .lede{font-size:1.1rem; color:var(--muted); margin:0; max-width:64ch}
+
+  h2{
+    font-family:var(--serif); font-size:1.55rem; font-weight:600;
+    margin:56px 0 6px; letter-spacing:-.01em; scroll-margin-top:20px;
+  }
+  h2 + .sub{color:var(--muted); margin:0 0 24px; font-size:.95rem}
+  h3{font-size:1rem; font-weight:650; margin:32px 0 8px}
+  p{margin:0 0 16px}
+  a{color:var(--accent)}
+
+  .panel{
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:24px 26px; margin:20px 0;
+  }
+
+  /* defect list */
+  .defect{
+    display:grid; grid-template-columns:auto 1fr; gap:0 18px;
+    padding:20px 0; border-bottom:1px solid var(--line-soft);
+  }
+  .defect:last-child{border-bottom:0; padding-bottom:0}
+  .defect:first-child{padding-top:0}
+  .num{
+    font-family:var(--mono); font-size:11px; color:var(--accent);
+    background:var(--accent-soft); border-radius:5px;
+    width:26px; height:24px; display:grid; place-items:center; margin-top:3px;
+  }
+  .defect h4{margin:0 0 6px; font-size:1rem; font-weight:650}
+  .defect p{margin:0 0 10px; color:var(--muted); font-size:.94rem}
+  .defect p:last-child{margin-bottom:0}
+  .fix{
+    color:var(--ink); font-size:.9rem; border-left:2px solid var(--good);
+    padding-left:12px; background:var(--good-soft); padding:8px 12px;
+    border-radius:0 5px 5px 0;
+  }
+  .fix b{font-weight:650; color:var(--good)}
+
+  code{font-family:var(--mono); font-size:.87em; background:var(--line-soft);
+       padding:1px 5px; border-radius:4px}
+
+  .scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; margin:18px 0}
+  table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:520px}
+  th,td{text-align:left; padding:9px 14px 9px 0; border-bottom:1px solid var(--line-soft)}
+  th{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--muted); font-weight:500;
+    border-bottom:1px solid var(--line);
+  }
+  td.n{font-family:var(--mono); font-variant-numeric:tabular-nums}
+  .win{color:var(--good); font-weight:600}
+  .lose{color:var(--muted)}
+
+  /* chart */
+  .chart{margin:24px 0 8px}
+  .bar-row{display:grid; grid-template-columns:132px 1fr; gap:14px; align-items:center; margin-bottom:9px}
+  .bar-label{font-family:var(--mono); font-size:11px; color:var(--muted); text-align:right}
+  .bars{display:flex; flex-direction:column; gap:3px}
+  .bar{height:15px; border-radius:3px; display:flex; align-items:center; padding-left:7px;
+       font-family:var(--mono); font-size:10px; color:#fff; min-width:34px}
+  .bar.old{background:#b0a89a}
+  .bar.new{background:var(--good)}
+  .legend{display:flex; gap:20px; font-size:.82rem; color:var(--muted); margin-top:16px; flex-wrap:wrap}
+  .swatch{display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:6px; vertical-align:-1px}
+
+  .callout{
+    background:var(--warn-soft); border:1px solid var(--line);
+    border-left:3px solid var(--warn); border-radius:0 8px 8px 0;
+    padding:18px 22px; margin:28px 0; font-size:.94rem;
+  }
+  .callout strong{color:var(--warn)}
+  .callout p:last-child{margin-bottom:0}
+
+  ol.steps{padding-left:0; list-style:none; counter-reset:s; margin:20px 0}
+  ol.steps li{
+    counter-increment:s; padding:14px 0 14px 42px; position:relative;
+    border-bottom:1px solid var(--line-soft); font-size:.95rem;
+  }
+  ol.steps li:last-child{border-bottom:0}
+  ol.steps li::before{
+    content:counter(s); position:absolute; left:0; top:15px;
+    font-family:var(--mono); font-size:11px; color:var(--accent);
+    background:var(--accent-soft); width:24px; height:22px;
+    display:grid; place-items:center; border-radius:5px;
+  }
+  pre{
+    background:var(--line-soft); border:1px solid var(--line); border-radius:7px;
+    padding:14px 16px; overflow-x:auto; font-family:var(--mono);
+    font-size:.83rem; line-height:1.55; margin:10px 0;
+  }
+  .files{font-family:var(--mono); font-size:.85rem}
+  .files div{padding:7px 0; border-bottom:1px solid var(--line-soft); display:flex;
+             gap:14px; flex-wrap:wrap; align-items:baseline}
+  .files div:last-child{border-bottom:0}
+  .files b{font-weight:600; min-width:220px}
+  .files span{color:var(--muted); font-family:var(--sans); font-size:.88rem}
+
+  footer{
+    margin-top:64px; padding-top:26px; border-top:1px solid var(--line);
+    font-size:.86rem; color:var(--muted);
+  }
+  @media(max-width:640px){
+    .bar-row{grid-template-columns:1fr}
+    .bar-label{text-align:left}
+    .files b{min-width:0; display:block; width:100%}
+  }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">CUS AI Reader · v0.6.0 · research use only</p>
+  <h1>The scoring path between the model and the grade, rebuilt</h1>
+  <p class="lede">Eight defects sat between the model output and the consensus grade. Two of them
+  meant the tool could never produce a grade at all. This release fixes the path,
+  adds calibration and anatomic constraints, and pins every clinical rule to the
+  2021 Canadian consensus paper.</p>
+</header>
+
+<h2>What was broken</h2>
+<p class="sub">Found by reading the scoring path against the consensus algorithm it claims to implement.</p>
+
+<div class="panel">
+
+  <div class="defect">
+    <div class="num">1</div>
+    <div>
+      <h4>A single bright frame could carry a finding</h4>
+      <p>Frame-to-study pooling took the mean of the three highest frame probabilities.
+      On a 400-frame sweep that is close to a maximum. Three noisy frames declared any
+      finding present, and speckle, the choroid plexus edge, and the caudothalamic notch
+      all produce isolated bright frames.</p>
+      <p class="fix"><b>Fixed.</b> A finding must now persist. The score is the more conservative of
+      the k-th largest probability and the highest level sustained across a run of consecutive
+      frames, and where the anatomy allows it, a second plane must confirm.</p>
+    </div>
+  </div>
+
+  <div class="defect">
+    <div class="num">2</div>
+    <div>
+      <h4>Step 2 of the algorithm was unanswerable</h4>
+      <p><code>confined_to_germinal_matrix</code> had no label anywhere in the manifest contract,
+      so it resolved to unknown on every study. Step 2 could never be answered, which pinned
+      every AI grade at <em>Indeterminate GMH-IVH grade</em> regardless of the images.</p>
+      <p class="fix"><b>Fixed.</b> Step 2 is derived, exactly as the algorithm derives it: hemorrhage
+      present with no intraventricular blood is confined to the germinal matrix. Grade I and
+      grade III now resolve.</p>
+    </div>
+  </div>
+
+  <div class="defect">
+    <div class="num">3</div>
+    <div>
+      <h4>The tool abstained on every study</h4>
+      <p>Abstention was global. Any one uncertain feature set it, and so did the default
+      absence of a serial study. Since that default is off, every study abstained on every
+      domain, including the domains the model had answered confidently.</p>
+      <p class="fix"><b>Fixed.</b> Abstention is scoped per domain. A clean coronal sweep with no
+      mastoid window now reports its hemorrhage grades and withholds cerebellar hemorrhage,
+      with the reason attached. That is what a reader does.</p>
+    </div>
+  </div>
+
+  <div class="defect">
+    <div class="num">4</div>
+    <div>
+      <h4>Alias matching biased every field toward yes</h4>
+      <p>Evidence fields were resolved by taking whichever candidate label scored highest.
+      <code>hemorrhage_present</code> listed <code>intraventricular_blood</code> as an alias, so
+      intraventricular scores could raise hemorrhage presence but never lower it. One-sided
+      error, on every field with more than one alias.</p>
+      <p class="fix"><b>Fixed.</b> Alias lookup is gone. Fields a network can emit are read directly;
+      fields that are logical consequences are derived.</p>
+    </div>
+  </div>
+
+  <div class="defect">
+    <div class="num">5</div>
+    <div>
+      <h4>PVHI was fed back in as its own input</h4>
+      <p>A label literally named <code>pvhi</code> was accepted as the input for periventricular
+      echogenicity. PVHI is the conclusion Step 4 reaches, so accepting it as an input
+      short-circuited the rule it was meant to feed.</p>
+      <p class="fix"><b>Fixed.</b> Step 4 reads focal periventricular echogenicity only.</p>
+    </div>
+  </div>
+
+  <div class="defect">
+    <div class="num">6</div>
+    <div>
+      <h4>Raw probabilities met fixed thresholds</h4>
+      <p>Multi-task heads are over-confident. A threshold of 0.50 applied to uncalibrated
+      output is not the operating point the number implies, and nothing in the pipeline
+      corrected for it.</p>
+      <p class="fix"><b>Fixed.</b> Platt, isotonic, or temperature calibration carried in the manifest,
+      applied per frame before aggregation. <code>scripts/fit_operating_point.py</code> fits it from
+      your labelled studies and picks thresholds that weight a missed bleed above a second read.</p>
+    </div>
+  </div>
+
+  <div class="defect">
+    <div class="num">7</div>
+    <div>
+      <h4>Impossible outputs were graded as though possible</h4>
+      <p>Nothing linked related heads. The model could report P(AHW&nbsp;&gt;&nbsp;10&nbsp;mm)&nbsp;=&nbsp;0.80
+      alongside P(AHW&nbsp;&gt;&nbsp;6&nbsp;mm)&nbsp;=&nbsp;0.40. Every ventricle wider than 10&nbsp;mm is also
+      wider than 6&nbsp;mm, so that pair cannot happen, and the rules graded the contradiction
+      instead of flagging it.</p>
+      <p class="fix"><b>Fixed.</b> Nested thresholds are made monotone, containment hierarchies enforced,
+      exclusive grade families renormalised. Every repair is logged, because frequent repair is
+      itself a finding about the model.</p>
+    </div>
+  </div>
+
+  <div class="defect">
+    <div class="num">8</div>
+    <div>
+      <h4>Cerebellar findings were scored from coronal frames</h4>
+      <p>Every label was scored from every accepted frame. Cerebellar hemorrhage probabilities
+      were pooled from coronal frontal-horn frames, where the cerebellum is not in view.</p>
+      <p class="fix"><b>Fixed.</b> Each label family is restricted to the planes that can carry it.
+      Cerebellar labels score from the posterior fossa only; AHW and VI from coronal only.</p>
+    </div>
+  </div>
+
+</div>
+
+<h2>Does the aggregation change actually help</h2>
+<p class="sub">A simulation of the pooling step, run at matched sensitivity so the result is not a threshold shift.</p>
+
+<p>Pooling is the one part of this that can be tested without labelled images. Sweeps are
+generated with a contiguous lesion run in positive studies, artifact arriving in short bursts
+in both, per-study variation in lesion visibility, and 30 percent of positives carrying a
+subtle lesion. Both rules are then compared at 90 percent sensitivity.</p>
+
+<div class="panel">
+  <h3 style="margin-top:0">Specificity at 90 percent sensitivity</h3>
+  <div class="chart">
+
+    <div class="bar-row">
+      <div class="bar-label">artifact 0.002<br>bursts ≤2</div>
+      <div class="bars">
+        <div class="bar old" style="width:72.2%">0.72</div>
+        <div class="bar new" style="width:99.7%">1.00</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">artifact 0.005<br>bursts ≤2</div>
+      <div class="bars">
+        <div class="bar old" style="width:49.1%">0.49</div>
+        <div class="bar new" style="width:98.8%">0.99</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">artifact 0.005<br>bursts ≤3</div>
+      <div class="bars">
+        <div class="bar old" style="width:47.4%">0.47</div>
+        <div class="bar new" style="width:82.1%">0.82</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">artifact 0.01<br>bursts ≤2</div>
+      <div class="bars">
+        <div class="bar old" style="width:34.3%">0.34</div>
+        <div class="bar new" style="width:95.8%">0.96</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label">artifact 0.02<br>bursts ≤3</div>
+      <div class="bars">
+        <div class="bar old" style="width:22.3%">0.22</div>
+        <div class="bar new" style="width:32.7%">0.33</div>
+      </div>
+    </div>
+
+  </div>
+  <div class="legend">
+    <span><span class="swatch" style="background:#b0a89a"></span>Legacy top-k mean</span>
+    <span><span class="swatch" style="background:#2f6b4f"></span>Persistence</span>
+    <span>3000 simulated studies per row, 30 percent prevalence</span>
+  </div>
+</div>
+
+<div class="scroll">
+<table>
+  <thead><tr>
+    <th>Artifact rate</th><th>Burst length</th>
+    <th>AUC legacy</th><th>AUC persistence</th>
+    <th>Spec legacy</th><th>Spec persistence</th>
+  </tr></thead>
+  <tbody>
+    <tr><td class="n">0.002</td><td class="n">≤2</td><td class="n lose">0.917</td><td class="n win">0.994</td><td class="n lose">0.722</td><td class="n win">0.997</td></tr>
+    <tr><td class="n">0.002</td><td class="n">≤3</td><td class="n lose">0.886</td><td class="n win">0.971</td><td class="n lose">0.684</td><td class="n win">0.931</td></tr>
+    <tr><td class="n">0.005</td><td class="n">≤2</td><td class="n lose">0.825</td><td class="n win">0.991</td><td class="n lose">0.491</td><td class="n win">0.988</td></tr>
+    <tr><td class="n">0.005</td><td class="n">≤3</td><td class="n lose">0.794</td><td class="n win">0.920</td><td class="n lose">0.474</td><td class="n win">0.821</td></tr>
+    <tr><td class="n">0.010</td><td class="n">≤2</td><td class="n lose">0.724</td><td class="n win">0.984</td><td class="n lose">0.343</td><td class="n win">0.958</td></tr>
+    <tr><td class="n">0.010</td><td class="n">≤3</td><td class="n lose">0.703</td><td class="n win">0.818</td><td class="n lose">0.335</td><td class="n win">0.591</td></tr>
+    <tr><td class="n">0.020</td><td class="n">≤2</td><td class="n lose">0.642</td><td class="n win">0.957</td><td class="n lose">0.249</td><td class="n win">0.912</td></tr>
+    <tr><td class="n">0.020</td><td class="n">≤3</td><td class="n lose">0.616</td><td class="n win">0.712</td><td class="n lose">0.223</td><td class="n win">0.327</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Persistence wins on every row. The margin is wide when artifact is isolated and narrow
+when artifact arrives in long bursts, which is the expected behaviour and the reason the
+whole sweep is shown rather than one number.</p>
+
+<div class="callout">
+  <p><strong>What this is not.</strong> This is a simulation of the pooling step. It says nothing
+  about how well any model reads an ultrasound, and it is not a clinical validation. No trained
+  weights ship with this repository. The manifest still reads <code>"validated": false</code> and
+  should keep reading that until a model has been fitted and measured on held-out adjudicated
+  Canadian data.</p>
+</div>
+
+<h3>Calibration, separately</h3>
+<p>On a synthetic over-confident detector, Platt scaling moved log loss from 0.328 to 0.096
+and the Brier score from 0.097 to 0.018, and removed the false positives that a naive 0.50
+threshold produced on the same scores.</p>
+
+<h2>Clinical rules corrected</h2>
+<p class="sub">Read back against Front Pediatr 2021;9:618236 and the HUSDiagnostic decision tree. Each now has a named test.</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Rule</th><th>Was</th><th>Now</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Echodensity definition</td>
+      <td>Any echogenicity counted</td>
+      <td>Must exceed choroid plexus brightness. Peritrigonal blushes and symmetric frontal echodensities read as physiologic.</td>
+    </tr>
+    <tr>
+      <td>Step 4, negative at Step 1</td>
+      <td>"PVHI requires ipsilateral GMH-IVH"</td>
+      <td>Reported as significant ischemic injury, which is what the paper says to report.</td>
+    </tr>
+    <tr>
+      <td>Bilateral Step 4</td>
+      <td>Not implemented</td>
+      <td>Anchored to the largest GMH-IVH. Bilateral echogenicity with only small germinal matrix hemorrhage favours ischemic injury over bilateral PVHI.</td>
+    </tr>
+    <tr>
+      <td>Step 1 scope</td>
+      <td>Lateral ventricle only</td>
+      <td>Includes third and fourth ventricular blood.</td>
+    </tr>
+    <tr>
+      <td>PHVD timing</td>
+      <td>Graded at any age</td>
+      <td>Graded after day 7. Acute distension in the first week is grade III, not PHVD, which is a separation the consensus makes deliberately.</td>
+    </tr>
+    <tr>
+      <td>Severe injury definition</td>
+      <td>Large CBH only</td>
+      <td>Moderate to large CBH, per the paper.</td>
+    </tr>
+    <tr>
+      <td>Hemorrhage off the axis</td>
+      <td>Fell through ungraded</td>
+      <td>Reported explicitly, with a prompt to consider cerebellar, subdural, or parenchymal sources.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2>What is in the release</h2>
+
+<div class="panel files">
+  <div><b>cus_ai/aggregation.py</b><span>New. Persistence-based frame-to-study scoring, plane scoping, quality weighting.</span></div>
+  <div><b>cus_ai/calibration.py</b><span>New. Platt, isotonic, and temperature calibration from the manifest.</span></div>
+  <div><b>cus_ai/consistency.py</b><span>New. Anatomic constraint repair with a logged audit trail.</span></div>
+  <div><b>cus_ai/evidence_mapping.py</b><span>New. Derived consensus evidence, replacing alias lookup.</span></div>
+  <div><b>cus_ai/evaluation.py</b><span>New. AUC, kappa, quadratic weighted kappa, threshold selection, study-level bootstrap intervals.</span></div>
+  <div><b>cus_ai/ai_consensus.py</b><span>Rewritten. Per-domain abstention with reasons and confidence.</span></div>
+  <div><b>cus_ai/clinical.py</b><span>Corrected against the consensus paper.</span></div>
+  <div><b>cus_ai/model.py</b><span>Calibrate, plane-gate, aggregate, repair, in that order.</span></div>
+  <div><b>scripts/fit_operating_point.py</b><span>Fit calibration and thresholds from your labelled studies.</span></div>
+  <div><b>scripts/benchmark_aggregation.py</b><span>Reproduce the table above.</span></div>
+  <div><b>docs/AI_SCORING_ACCURACY.md</b><span>Full reasoning, defect by defect.</span></div>
+  <div><b>tests/</b><span>59 tests, up from 29. Every clinical rule pinned to its source.</span></div>
+</div>
+
+<h2>Getting it onto the repo</h2>
+
+<ol class="steps">
+  <li>Open the <code>CUS-AI-reader-v0.6.0</code> folder that has been written into your CUS AI folder.</li>
+  <li>Double-click <code>PUSH-TO-GITHUB.bat</code>. It clones, applies the patch on a branch called
+      <code>ai-scoring-v0.6.0</code>, and pushes. If it stops at authentication, run <code>gh auth login</code>
+      once and try again.</li>
+  <li>Open the repo on GitHub and raise the pull request from that branch.</li>
+  <li>Alternatives, if you prefer them, are in <code>HOW-TO-SHIP.md</code>: a git bundle, or a
+      straight file copy over your clone.</li>
+</ol>
+
+<p>Verify before merging:</p>
+<pre>python -m pip install -r requirements-dev.txt
+pytest                                        # 59 passing
+python scripts/benchmark_aggregation.py --sweep</pre>
+
+<h2>What comes next</h2>
+<p>This release fixes how model output becomes a grade. It does not train a model, and the
+gap between the two is the whole remaining problem. The order that makes sense:</p>
+
+<ol class="steps">
+  <li>Adjudicate the pilot registry to a second reader. Fifteen single-reader examinations across
+      eight infants is enough for workflow, not for fitting anything.</li>
+  <li>Collect labelled per-frame scores and run <code>fit_operating_point.py</code> to replace the
+      placeholder thresholds with fitted ones.</li>
+  <li>Keep all examinations from one infant inside one partition, and hold an entire site out of
+      training, tuning, and threshold selection.</li>
+  <li>Lock the primary endpoint before analysis. Per-infant sensitivity for severe preterm brain
+      injury, with centre-clustered resampling, is the endpoint the validation protocol already
+      recommends.</li>
+  <li>Only then set <code>"validated": true</code>.</li>
+</ol>
+
+<footer>
+  <p>CUS AI Reader v0.6.0 · research, education, and quality improvement only · not a medical
+  device and not a diagnostic report · de-identified media only · a qualified neonatologist,
+  pediatric radiologist, or neuroradiologist must review the complete examination.</p>
+  <p>Consensus source: Mohammad K, Scott JN, Leijser LM, et al. Consensus Approach for
+  Standardizing the Screening and Classification of Preterm Brain Injury Diagnosed With Cranial
+  Ultrasound: A Canadian Perspective. Front Pediatr. 2021;9:618236. doi:10.3389/fped.2021.618236</p>
+</footer>
+
+</div>
+</body></html>

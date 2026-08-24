@@ -2,6 +2,8 @@
 
 CUS AI Reader is a research-use web application for neonatal cranial ultrasound study review. It accepts a single image, an image set, DICOM objects, or cine clips. The app decodes every frame sequentially, performs technical quality checks on every frame, and sends every frame to an installed model. The model contract identifies coronal, sagittal, posterior fossa, other, or indeterminate planes before plane-specific feature aggregation. AI feature decisions and independently entered expert findings enter the same Canadian consensus rule engine. The app displays AI grading, expert grading, exact agreement, and auditable JSON, Markdown, study-level CSV, and every-frame CSV exports.
 
+Version 0.6.0 rebuilds the scoring path between the model and the rule engine: calibrated frame probabilities, persistence-based frame-to-study aggregation, anatomic consistency constraints, derived rather than alias-matched consensus evidence, and abstention scoped to the domain it affects instead of the whole study. The reasoning, the defects it corrects, and the supporting simulation are in `docs/AI_SCORING_ACCURACY.md`.
+
 The repository also provides a guarded ONNX interface for a future validated feature model. No diagnostic weights are bundled. The software will not silently substitute heuristics or a general-purpose vision-language model for a validated neonatal ultrasound model. Version 0.5.0 includes a provisional single-reader label registry for the 15 pilot examinations. The supplied labels remain concealed until an independent expert score has been submitted.
 
 ## Safety status

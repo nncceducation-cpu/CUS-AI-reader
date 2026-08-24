@@ -1,14 +1,108 @@
+"""Turn calibrated model probabilities into a consensus classification.
+
+The previous version abstained globally. Any single uncertain feature, and the
+absence of a serial study, both appended a reason, and any reason at all set
+``abstained`` for the whole study. Since ``serial_study_available`` defaults to
+false and the manifest contract had no label for Step 2, the practical effect
+was that every study abstained on every domain, including the domains the model
+had answered confidently.
+
+Abstention is now per domain. A study with a clean coronal sweep and no mastoid
+window reports its GMH-IVH grades and withholds cerebellar hemorrhage, which is
+what a reader would do. The study-level ``abstained`` flag fires only when no
+domain survives, and the reasons that used to suppress everything are carried as
+scoped caveats on the domains they actually affect.
+"""
+
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .clinical import classify_study
-from .schemas import Answer, SideEvidence, StudyClassification, StudyEvidence
+from .evidence_mapping import (
+    DEFAULT_DECISION_MARGIN,
+    DEFAULT_THRESHOLD,
+    Decision,
+    multiclass_choice,
+    side_evidence_from_probabilities,
+)
+from .schemas import StudyClassification, StudyEvidence
+
+WMI_LABELS = {
+    "wmi_none": "none",
+    "wmi_pve_under_7_days": "pve_under_7_days",
+    "wmi_grade_1": "grade_1",
+    "wmi_grade_2": "grade_2",
+    "wmi_grade_3": "grade_3",
+    "wmi_grade_4": "grade_4",
+}
+
+CBH_LABELS = {
+    "cbh_none": "none",
+    "cbh_punctate": "punctate",
+    "cbh_limited": "limited",
+    "cbh_large": "large",
+}
+
+# Fields each reportable domain depends on. A domain is reportable when its
+# required decisions were answered; optional decisions only lower confidence.
+DOMAIN_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "left_gmh_ivh": (
+        "left_hemorrhage_present",
+        "left_intraventricular_blood",
+        "left_confined_to_germinal_matrix",
+    ),
+    "right_gmh_ivh": (
+        "right_hemorrhage_present",
+        "right_intraventricular_blood",
+        "right_confined_to_germinal_matrix",
+    ),
+    "left_pvhi": ("left_hemorrhage_present", "left_focal_periventricular_echogenicity"),
+    "right_pvhi": ("right_hemorrhage_present", "right_focal_periventricular_echogenicity"),
+    "wmi": ("wmi_pattern",),
+    "cerebellar_hemorrhage": ("cerebellar_hemorrhage",),
+    "phvd": ("vi_above_97th", "vi_above_97th_plus_4_mm"),
+}
+
+DOMAIN_PLANE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "left_gmh_ivh": ("coronal", "sagittal"),
+    "right_gmh_ivh": ("coronal", "sagittal"),
+    "left_pvhi": ("coronal", "sagittal"),
+    "right_pvhi": ("coronal", "sagittal"),
+    "wmi": ("coronal", "sagittal"),
+    "cerebellar_hemorrhage": ("posterior_fossa",),
+    "phvd": ("coronal",),
+}
+
+# Domains that cannot be settled from one time point, whatever the model says.
+SERIAL_DEPENDENT_DOMAINS = ("wmi", "phvd")
+
+# Refinements a model may or may not emit. Their absence lowers detail, not
+# validity, so they are not counted as missing consensus outputs.
+OPTIONAL_FIELDS = (
+    "left_multiple_evolved_pvhi_cysts",
+    "right_multiple_evolved_pvhi_cysts",
+    "left_confined_to_germinal_matrix",
+    "right_confined_to_germinal_matrix",
+)
 
 
-DEFAULT_THRESHOLD = 0.50
-DEFAULT_DECISION_MARGIN = 0.05
+@dataclass(slots=True)
+class DomainStatus:
+    """Whether one reportable domain can be released, and how confidently."""
+
+    domain: str
+    reportable: bool
+    confidence: float
+    reasons: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "reportable": self.reportable,
+            "confidence": round(self.confidence, 4),
+            "reasons": list(self.reasons),
+        }
 
 
 @dataclass(slots=True)
@@ -19,6 +113,12 @@ class AIConsensusResult:
     abstention_reasons: list[str]
     missing_outputs: list[str]
     feature_decisions: dict[str, dict[str, Any]]
+    domain_status: dict[str, DomainStatus] = field(default_factory=dict)
+    study_caveats: list[str] = field(default_factory=list)
+
+    @property
+    def reportable_domains(self) -> list[str]:
+        return sorted(name for name, status in self.domain_status.items() if status.reportable)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -28,162 +128,52 @@ class AIConsensusResult:
             "abstention_reasons": self.abstention_reasons,
             "missing_outputs": self.missing_outputs,
             "feature_decisions": self.feature_decisions,
+            "domain_status": {name: status.to_dict() for name, status in self.domain_status.items()},
+            "reportable_domains": self.reportable_domains,
+            "study_caveats": self.study_caveats,
         }
 
 
-def _probability(
-    probabilities: dict[str, float], aliases: tuple[str, ...]
-) -> tuple[str | None, float | None]:
-    found = [(name, float(probabilities[name])) for name in aliases if name in probabilities]
-    if not found:
-        return None, None
-    return max(found, key=lambda item: item[1])
+def _assess_domain(
+    domain: str,
+    decisions: dict[str, Decision],
+    plane_counts: dict[str, int],
+    serial_study_available: bool,
+    consistency_conflicts: list[str],
+) -> DomainStatus:
+    reasons: list[str] = []
+    confidences: list[float] = []
+    reportable = True
 
+    for field_name in DOMAIN_REQUIREMENTS.get(domain, ()):
+        decision = decisions.get(field_name)
+        if decision is None or decision.source == "missing":
+            reasons.append(f"{field_name} has no model output")
+            reportable = False
+            continue
+        confidences.append(decision.confidence)
+        if decision.answer in {"unknown", "not_assessed"}:
+            reasons.append(f"{field_name} fell inside the decision dead band")
+            reportable = False
 
-def _answer(
-    probabilities: dict[str, float],
-    aliases: tuple[str, ...],
-    thresholds: dict[str, float],
-    decision_margin: float,
-    decisions: dict[str, dict[str, Any]],
-    output_name: str,
-) -> Answer:
-    label, value = _probability(probabilities, aliases)
-    if label is None or value is None:
-        decisions[output_name] = {"answer": "unknown", "reason": "model output missing"}
-        return "unknown"
-    threshold = float(thresholds.get(label, DEFAULT_THRESHOLD))
-    if value >= threshold + decision_margin:
-        answer: Answer = "yes"
-    elif value <= threshold - decision_margin:
-        answer = "no"
-    else:
-        answer = "unknown"
-    decisions[output_name] = {
-        "answer": answer,
-        "label": label,
-        "probability": value,
-        "threshold": threshold,
-        "decision_margin": decision_margin,
-    }
-    return answer
+    for plane in DOMAIN_PLANE_REQUIREMENTS.get(domain, ()):
+        if plane_counts.get(plane, 0) == 0:
+            reasons.append(f"no accepted {plane.replace('_', ' ')} frame")
+            reportable = False
 
+    if domain in SERIAL_DEPENDENT_DOMAINS and not serial_study_available:
+        reasons.append(
+            "this domain is defined by change over time and no serial study was supplied"
+        )
+        reportable = False
 
-def _multiclass_choice(
-    probabilities: dict[str, float],
-    labels: dict[str, str],
-    thresholds: dict[str, float],
-    decision_margin: float,
-    decisions: dict[str, dict[str, Any]],
-    output_name: str,
-    default: str,
-) -> str:
-    found = [(name, probabilities[name], value) for name, value in labels.items() if name in probabilities]
-    if not found:
-        decisions[output_name] = {"answer": default, "reason": "model outputs missing"}
-        return default
-    found.sort(key=lambda item: item[1], reverse=True)
-    label, probability, value = found[0]
-    runner_up = found[1][1] if len(found) > 1 else 0.0
-    threshold = float(thresholds.get(label, DEFAULT_THRESHOLD))
-    accepted = probability >= threshold and probability - runner_up >= decision_margin
-    answer = value if accepted else default
-    decisions[output_name] = {
-        "answer": answer,
-        "label": label,
-        "probability": float(probability),
-        "runner_up_probability": float(runner_up),
-        "threshold": threshold,
-        "decision_margin": decision_margin,
-    }
-    return answer
+    if consistency_conflicts:
+        reasons.append("model outputs required anatomic repair before grading")
 
-
-def _side_from_prediction(
-    side: str,
-    probabilities: dict[str, float],
-    thresholds: dict[str, float],
-    decision_margin: float,
-    decisions: dict[str, dict[str, Any]],
-) -> SideEvidence:
-    prefix = f"{side}_"
-    cystic_answer = _answer(
-        probabilities,
-        (prefix + "porencephalic_cyst", prefix + "evolved_pvhi_cyst"),
-        thresholds,
-        decision_margin,
-        decisions,
-        prefix + "porencephalic_cyst",
-    )
-    return SideEvidence(
-        side=side,  # type: ignore[arg-type]
-        hemorrhage_present=_answer(
-            probabilities,
-            (prefix + "hemorrhage_present", prefix + "germinal_matrix_hemorrhage", prefix + "intraventricular_blood"),
-            thresholds,
-            decision_margin,
-            decisions,
-            prefix + "hemorrhage_present",
-        ),
-        confined_to_germinal_matrix=_answer(
-            probabilities,
-            (prefix + "confined_to_germinal_matrix", prefix + "germinal_matrix_only"),
-            thresholds,
-            decision_margin,
-            decisions,
-            prefix + "confined_to_germinal_matrix",
-        ),
-        intraventricular_blood=_answer(
-            probabilities,
-            (prefix + "intraventricular_blood",),
-            thresholds,
-            decision_margin,
-            decisions,
-            prefix + "intraventricular_blood",
-        ),
-        ventricular_distension=_answer(
-            probabilities,
-            (prefix + "ventricular_distension",),
-            thresholds,
-            decision_margin,
-            decisions,
-            prefix + "ventricular_distension",
-        ),
-        ahw_above_6_mm=_answer(
-            probabilities,
-            (prefix + "ahw_above_6_mm",),
-            thresholds,
-            decision_margin,
-            decisions,
-            prefix + "ahw_above_6_mm",
-        ),
-        ahw_above_10_mm=_answer(
-            probabilities,
-            (prefix + "ahw_above_10_mm",),
-            thresholds,
-            decision_margin,
-            decisions,
-            prefix + "ahw_above_10_mm",
-        ),
-        adjacent_periventricular_echogenicity=_answer(
-            probabilities,
-            (prefix + "focal_periventricular_echogenicity", prefix + "pvhi"),
-            thresholds,
-            decision_margin,
-            decisions,
-            prefix + "focal_periventricular_echogenicity",
-        ),
-        echogenicity_brighter_than_choroid=_answer(
-            probabilities,
-            (prefix + "echogenicity_brighter_than_choroid",),
-            thresholds,
-            decision_margin,
-            decisions,
-            prefix + "echogenicity_brighter_than_choroid",
-        ),
-        cystic_change={"yes": "porencephalic", "no": "none", "unknown": "not_assessed"}[cystic_answer],
-        clinician_verified=False,
-    )
+    confidence = min(confidences) if confidences else 0.0
+    if not reportable:
+        confidence = min(confidence, 0.0) if not confidences else confidence * 0.5
+    return DomainStatus(domain=domain, reportable=reportable, confidence=confidence, reasons=reasons)
 
 
 def grade_prediction(
@@ -197,66 +187,44 @@ def grade_prediction(
     all_frames_processed: bool = True,
     serial_study_available: bool = False,
 ) -> AIConsensusResult:
-    probabilities = {name: float(value) for name, value in (prediction.get("probabilities") or {}).items()}
+    probabilities = {
+        name: float(value) for name, value in (prediction.get("probabilities") or {}).items()
+    }
     threshold_map = thresholds or {}
-    decisions: dict[str, dict[str, Any]] = {}
-    left = _side_from_prediction("left", probabilities, threshold_map, decision_margin, decisions)
-    right = _side_from_prediction("right", probabilities, threshold_map, decision_margin, decisions)
+    decisions: dict[str, Decision] = {}
 
-    wmi_pattern = _multiclass_choice(
-        probabilities,
-        {
-            "wmi_none": "none",
-            "wmi_pve_under_7_days": "pve_under_7_days",
-            "wmi_grade_1": "grade_1",
-            "wmi_grade_2": "grade_2",
-            "wmi_grade_3": "grade_3",
-            "wmi_grade_4": "grade_4",
-        },
-        threshold_map,
-        decision_margin,
-        decisions,
-        "wmi_pattern",
-        "not_assessed",
+    left = side_evidence_from_probabilities(
+        "left", probabilities, threshold_map, decision_margin, decisions
     )
-    cbh = _multiclass_choice(
-        probabilities,
-        {
-            "cbh_none": "none",
-            "cbh_punctate": "punctate",
-            "cbh_limited": "limited",
-            "cbh_large": "large",
-        },
-        threshold_map,
-        decision_margin,
-        decisions,
-        "cerebellar_hemorrhage",
-        "not_assessed",
+    right = side_evidence_from_probabilities(
+        "right", probabilities, threshold_map, decision_margin, decisions
     )
-    prior = "yes" if "yes" in {left.hemorrhage_present, right.hemorrhage_present} else (
-        "no" if left.hemorrhage_present == right.hemorrhage_present == "no" else "unknown"
+
+    wmi_pattern = multiclass_choice(
+        "wmi_pattern", probabilities, WMI_LABELS, threshold_map, decision_margin, decisions, "not_assessed"
     )
-    vi97 = _answer(
-        probabilities,
-        ("vi_above_97th",),
-        threshold_map,
-        decision_margin,
-        decisions,
-        "vi_above_97th",
+    cbh = multiclass_choice(
+        "cerebellar_hemorrhage", probabilities, CBH_LABELS, threshold_map, decision_margin, decisions, "not_assessed"
     )
-    vi97p4 = _answer(
-        probabilities,
-        ("vi_above_97th_plus_4_mm",),
-        threshold_map,
-        decision_margin,
-        decisions,
-        "vi_above_97th_plus_4_mm",
+
+    prior = (
+        "yes"
+        if "yes" in {left.hemorrhage_present, right.hemorrhage_present}
+        else ("no" if left.hemorrhage_present == right.hemorrhage_present == "no" else "unknown")
     )
+    vi97 = _decide_simple(
+        "vi_above_97th", probabilities, threshold_map, decision_margin, decisions
+    )
+    vi97p4 = _decide_simple(
+        "vi_above_97th_plus_4_mm", probabilities, threshold_map, decision_margin, decisions
+    )
+
 
     plane_counts = {name: int(value) for name, value in (prediction.get("plane_counts") or {}).items()}
     coronal = plane_counts.get("coronal", 0) > 0
     sagittal = plane_counts.get("sagittal", 0) > 0
     posterior = plane_counts.get("posterior_fossa", 0) > 0
+
     evidence = StudyEvidence(
         study_code=study_code,
         postnatal_age_days=postnatal_age_days,
@@ -283,39 +251,60 @@ def grade_prediction(
     )
     classification = classify_study(evidence)
 
-    required = [
-        f"{side}_{feature}"
-        for side in ("left", "right")
-        for feature in (
-            "hemorrhage_present",
-            "confined_to_germinal_matrix",
-            "intraventricular_blood",
-            "ventricular_distension",
-            "ahw_above_6_mm",
-            "focal_periventricular_echogenicity",
-            "porencephalic_cyst",
-        )
-    ]
-    missing = [name for name in required if decisions.get(name, {}).get("reason") == "model output missing"]
-    reasons = list(prediction.get("abstention_reasons") or [])
-    if missing:
-        reasons.append("required consensus feature outputs are missing")
+    conflicts = list((prediction.get("consistency") or {}).get("conflicts") or [])
+    domain_status = {
+        domain: _assess_domain(domain, decisions, plane_counts, serial_study_available, conflicts)
+        for domain in DOMAIN_REQUIREMENTS
+    }
+
+    missing = sorted(
+        name
+        for name, decision in decisions.items()
+        if decision.source == "missing" and name not in OPTIONAL_FIELDS
+    )
+
+    caveats: list[str] = list(prediction.get("abstention_reasons") or [])
     if not all_frames_processed:
-        reasons.append("complete sequential frame processing was not confirmed")
-    if not coronal:
-        reasons.append("no accepted coronal frame")
-    if not sagittal:
-        reasons.append("no accepted sagittal frame")
-    if not serial_study_available:
-        reasons.append("serial evidence was not supplied for WMI evolution and PHVD trajectory")
-    if any(value.get("answer") == "unknown" for value in decisions.values()):
-        reasons.append("one or more AI feature decisions are uncertain")
-    reasons = list(dict.fromkeys(reasons))
+        caveats.append("complete sequential frame processing was not confirmed")
+    if not prediction.get("calibration_applied", False):
+        caveats.append(
+            "no probability calibration was applied, so thresholds are being compared against "
+            "raw network confidence"
+        )
+    if conflicts:
+        caveats.extend(conflicts)
+    if missing:
+        caveats.append(f"{len(missing)} consensus feature outputs are absent from the model")
+    caveats = list(dict.fromkeys(caveats))
+
+    reportable = [name for name, status in domain_status.items() if status.reportable]
+    abstained = not reportable
+
+    abstention_reasons = (
+        sorted({reason for status in domain_status.values() for reason in status.reasons})
+        if abstained
+        else []
+    )
+
     return AIConsensusResult(
         evidence=evidence,
         classification=classification,
-        abstained=bool(prediction.get("abstained")) or bool(reasons),
-        abstention_reasons=reasons,
+        abstained=abstained,
+        abstention_reasons=abstention_reasons,
         missing_outputs=missing,
-        feature_decisions=decisions,
+        feature_decisions={name: decision.to_dict() for name, decision in decisions.items()},
+        domain_status=domain_status,
+        study_caveats=caveats,
     )
+
+
+def _decide_simple(
+    label: str,
+    probabilities: dict[str, float],
+    thresholds: dict[str, float],
+    margin: float,
+    decisions: dict[str, Decision],
+) -> str:
+    from .evidence_mapping import decide
+
+    return decide(label, label, probabilities, thresholds, margin, decisions)
