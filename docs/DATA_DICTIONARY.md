@@ -5,6 +5,8 @@
 | Field | Type | Required | Definition |
 |---|---|---:|---|
 | study_code | string | yes | Project-specific de-identified examination code. Never use medical record number. |
+| expert_reader_code | string | expert annotation | Project-issued reader code. Do not use a name or email address. |
+| expert_review_round | categorical | expert annotation | Independent or adjudication. |
 | infant_code | string | development dataset | Stable de-identified infant code linking serial studies. |
 | center_code | categorical | development dataset | De-identified center label used for external and subgroup evaluation. |
 | scanner_code | categorical | yes | Manufacturer and model or an approved de-identified mapping. |
@@ -41,7 +43,7 @@
 | vi_mm | numeric | Falx to lateral wall of anterior horn on correct coronal plane. |
 | adjacent_periventricular_echogenicity | yes, no, unknown | Focal echogenicity adjacent to ipsilateral GMH-IVH. |
 | echogenicity_brighter_than_choroid | yes, no, unknown | White matter echogenicity above choroid plexus reference. |
-| cystic_change | categorical | none, localized, extensive periventricular, deep or subcortical, porencephalic, unknown. |
+| cystic_change | categorical | none, porencephalic, multiple unilateral cysts consistent with evolved PVHI, not assessed. This is recorded separately from ischemic WMI. |
 | clinician_verified | boolean | Expert confirmed source evidence rather than accepting model output. |
 
 ## Study-level serial domains
@@ -77,9 +79,12 @@ Every inference record must include:
 
 ## Expert versus AI agreement and exports
 
-The study-level CSV stores expert evidence, expert consensus classification, AI feature decisions, AI consensus classification, study-level model probabilities, abstention reasons, and exact domain agreement in one row. The every-frame CSV stores one row for every decoded frame with source name, frame index, plane assignment, plane confidence, ambiguity flag, and all available feature probabilities. Source pixels are never embedded in either CSV.
+The study-level CSV stores expert evidence, expert consensus classification, AI feature decisions, AI consensus classification, study-level model probabilities, abstention reasons, and exact domain agreement in one row. When the matched pilot label is revealed, the export also includes its raw wording, normalized targets, expert versus reference agreement, and AI versus reference agreement. The every-frame CSV stores one row for every decoded frame with source name, frame index, plane assignment, plane confidence, ambiguity flag, and all available feature probabilities. Source pixels are never embedded in either CSV.
+
+## Pilot reference labels
+
+The bundled `data/pilot_reference_labels_v1.csv` file contains one row per examination. Its status is `provisional_single_reader`. Unmentioned domains are stored as `not_reported` and excluded from agreement calculations. Examinations explicitly labelled normal are encoded as negative across the listed consensus injury domains. A porencephalic cyst is encoded as evolved ipsilateral PVHI rather than ischemic WMI.
 
 ## Annotation quality control
 
 Use explicit `unknown` rather than converting missing evidence to `no`. Store the two initial reader labels, adjudicated label, reader role, and review timestamp. For masks and calipers, store each reader's annotation and the adjudicated result. Calculate agreement before adjudication.
-

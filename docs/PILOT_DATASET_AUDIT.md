@@ -26,7 +26,7 @@ It cannot support a defensible model-training split, independent validation, or 
 
 Each examination should be graded independently by two qualified readers who are blinded to AI output. Store the initial labels before adjudication. A third expert should resolve disagreements. The minimum reference record includes infant code, examination code, age at scan, gestational age, coronal and sagittal adequacy, posterior fossa adequacy, left and right consensus features, AHW and VI measurements when scale is valid, WMI evolution, CBH, PHVD, and the final Canadian consensus categories.
 
-The app version 0.4.0 exports expert inputs, AI probabilities, every-frame plane assignments, AI consensus results, exact agreement, and abstention reasons as CSV. These records form the annotation table for later model development.
+The app version 0.5.0 exports expert inputs, AI probabilities, every-frame plane assignments, AI consensus results, exact agreement, and abstention reasons as CSV. It also stores the 15 project-lead labels as a provisional single-reader reference set. These records form the annotation table for later model development.
 
 ## Data-governance actions
 
@@ -35,4 +35,3 @@ The app version 0.4.0 exports expert inputs, AI probabilities, every-frame plane
 - Confirm that the approved secondary-use scope includes AI model development and external expert review.
 - Use an encrypted institutional location for the working copy and the codebook.
 - Do not upload exported records that contain dates or free text until they have passed a re-identification review.
-

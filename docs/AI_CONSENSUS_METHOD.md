@@ -2,7 +2,7 @@
 
 ## Model target
 
-The system does not train a direct black-box Canadian grade classifier. It estimates observable imaging features, laterality, plane adequacy, and ventricular thresholds. A versioned deterministic engine then applies the Canadian consensus rules. This structure makes each grade traceable to the model outputs and supports expert correction at the feature level.
+The system does not train a direct black-box Canadian grade classifier. It estimates observable imaging features, laterality, plane adequacy, ventricular thresholds, and porencephalic cystic evolution. A versioned deterministic engine then applies the Canadian consensus rules. This structure makes each grade traceable to the model outputs and supports expert correction at the feature level.
 
 The required model heads are:
 
@@ -36,4 +36,3 @@ The app reports exact agreement for the current study across left and right GMH-
 
 - Mohammad K, Scott JN, Leijser LM, et al. Front Pediatr. 2021;9:618236. doi:10.3389/fped.2021.618236.
 - Zhang J, et al. Deep learning approach for screening neonatal cerebral lesions on ultrasound in China. Nat Commun. 2025. doi:10.1038/s41467-025-63096-9.
-

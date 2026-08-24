@@ -11,7 +11,7 @@ def test_report_is_auditable_and_explicitly_non_diagnostic():
     )
     report = build_report(evidence, classify_study(evidence), [{"name": "test.png", "frames_loaded": 1}])
     markdown = report_to_markdown(report)
-    assert report["schema_version"] == "0.4.0"
+    assert report["schema_version"] == "0.5.0"
     assert report["required_human_review"] is True
     assert report["diagnostic_status"] == "Not a diagnostic report"
     assert "CUS-TEST" in markdown
@@ -27,9 +27,8 @@ def test_report_can_include_ai_and_agreement():
         "classification": classification.to_dict(),
         "abstention_reasons": ["test"],
     }
-    agreement = {"domains_compared": 8, "domains_agreeing": 8, "percent_agreement": 100.0}
+    agreement = {"domains_compared": 10, "domains_agreeing": 10, "percent_agreement": 100.0}
     report = build_report(evidence, classification, [], ai_consensus=ai, agreement=agreement)
     markdown = report_to_markdown(report)
     assert "## AI grading" in markdown
     assert "Percent agreement: 100.0%" in markdown
-

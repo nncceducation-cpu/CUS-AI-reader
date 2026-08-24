@@ -12,13 +12,21 @@ from cus_ai.ai_consensus import grade_prediction
 from cus_ai.clinical import classify_study
 from cus_ai.media import MediaFrame, decode_media, quality_metrics
 from cus_ai.model import OnnxFeatureModel, discover_model, prediction_to_json
+from cus_ai.reference_labels import (
+    compare_to_reference,
+    find_reference_label,
+    load_reference_labels,
+    reference_csv,
+    reference_display_row,
+)
 from cus_ai.reporting import build_report, report_to_markdown
 from cus_ai.schemas import SideEvidence, StudyEvidence
 
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 ROOT = Path(__file__).parent
 MODEL_DIR = ROOT / "models"
+REFERENCE_LABEL_PATH = ROOT / "data" / "pilot_reference_labels_v1.csv"
 OFFLINE_MODE = os.environ.get("CUS_AI_OFFLINE", "0") == "1"
 
 
@@ -48,6 +56,11 @@ st.markdown(
 @st.cache_data(show_spinner=False, max_entries=2)
 def cached_decode(name: str, payload: bytes):
     return decode_media(name, payload)
+
+
+@st.cache_data(show_spinner=False)
+def cached_reference_labels() -> list[dict[str, str]]:
+    return load_reference_labels(REFERENCE_LABEL_PATH)
 
 
 def preview_indices(total: int, limit: int) -> list[int]:
@@ -98,6 +111,13 @@ def side_form(side: str) -> SideEvidence:
         "Abnormal white matter echogenicity is brighter than choroid plexus",
         f"{side}_brighter",
     )
+    cystic_options = {
+        "Not assessed": "not_assessed",
+        "No porencephalic cyst": "none",
+        "Porencephalic cyst consistent with evolved PVHI": "porencephalic",
+        "Multiple unilateral cysts consistent with evolved PVHI": "multiple_evolved_pvhi",
+    }
+    cystic_label = st.selectbox("Cystic sequela on this side", list(cystic_options), key=f"{side}_cystic")
     verified = st.checkbox("Clinician verified the recorded features", key=f"{side}_verified")
     return SideEvidence(
         side=side,  # type: ignore[arg-type]
@@ -110,6 +130,7 @@ def side_form(side: str) -> SideEvidence:
         ahw_above_10_mm=("yes" if ahw > 10 else "no") if ahw is not None else "unknown",
         adjacent_periventricular_echogenicity=pve,  # type: ignore[arg-type]
         echogenicity_brighter_than_choroid=brighter,  # type: ignore[arg-type]
+        cystic_change=cystic_options[cystic_label],
         clinician_verified=verified,
     )
 
@@ -222,11 +243,11 @@ def render_media_tab() -> tuple[list[MediaFrame], list[dict], list[str]]:
         if index not in shown:
             continue
         with columns[display_index % 4]:
-            st.image(frame.image, use_container_width=True)
+            st.image(frame.image, width="stretch")
             st.caption(f"{frame.source_name} | frame {frame.frame_index} | {row['quality_flag']}")
         display_index += 1
     with st.expander("Technical quality table"):
-        st.dataframe(metrics_rows, use_container_width=True, hide_index=True)
+        st.dataframe(metrics_rows, width="stretch", hide_index=True)
     return all_frames, media_summary, warnings
 
 
@@ -301,7 +322,7 @@ def render_model_panel(frames: list[MediaFrame], media_summary: list[dict]) -> N
             for row in prediction["frame_predictions"]
         ]
         with st.expander("Per-frame plane assignments"):
-            st.dataframe(frame_rows, use_container_width=True, hide_index=True)
+            st.dataframe(frame_rows, width="stretch", hide_index=True)
         with st.expander("Study-level model probabilities"):
             st.json(
                 {
@@ -351,6 +372,12 @@ def render_evidence_tab(frames: list[MediaFrame], media_summary: list[dict]) -> 
 
     with st.form("evidence_form"):
         study_code = st.text_input("De-identified study code", placeholder="CUS-0001")
+        reader_code = st.text_input(
+            "Expert reader code",
+            placeholder="R01",
+            help="Use a project-issued reader code, not a name or email address.",
+        )
+        review_round = st.selectbox("Review round", ["Independent read", "Adjudication"])
         a, b = st.columns(2)
         with a:
             has_ga = st.checkbox("Gestational age available")
@@ -411,6 +438,8 @@ def render_evidence_tab(frames: list[MediaFrame], media_summary: list[dict]) -> 
         model_prediction = st.session_state.get("model_prediction") or {}
         evidence = StudyEvidence(
             study_code=study_code.strip(),
+            expert_reader_code=reader_code.strip() or None,
+            expert_review_round="adjudication" if review_round == "Adjudication" else "independent",
             postnatal_age_days=float(age) if has_age else None,
             gestational_age_weeks=float(ga) if has_ga else None,
             left=left,
@@ -467,7 +496,7 @@ def render_evidence_tab(frames: list[MediaFrame], media_summary: list[dict]) -> 
         st.write(f"**White matter injury:** {result['wmi']}")
         st.write(f"**Cerebellar hemorrhage:** {result['cerebellar_hemorrhage']}")
         st.write(f"**PHVD:** {result['phvd']}")
-        st.caption("Open the Report tab to review limitations and download the audit record.")
+        st.caption("Open Agreement and export to review limitations and download the audit record.")
 
 
 def render_side_result(title: str, result: dict) -> None:
@@ -477,6 +506,7 @@ def render_side_result(title: str, result: dict) -> None:
           <div class="tiny">{title.upper()}</div>
           <h3>{result['gmh_ivh']}</h3>
           <p><strong>PVHI:</strong> {result['pvhi']}</p>
+          <p><strong>Cystic sequela:</strong> {result['cystic_sequela']}</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -500,6 +530,46 @@ def render_report_tab(media_summary: list[dict]) -> None:
         if ai_result
         else []
     )
+    reference_rows = cached_reference_labels()
+    matched_reference = find_reference_label(reference_rows, evidence.study_code)
+    reveal_reference = False
+    expert_reference_rows: list[dict] = []
+    ai_reference_rows: list[dict] = []
+    if matched_reference:
+        st.markdown("### Provisional pilot reference")
+        st.caption(
+            "This single-reader label was supplied by the project lead. Reveal it only after the independent expert form is submitted."
+        )
+        reveal_reference = st.checkbox("Reveal the provided pilot label and calculate reference agreement")
+        if reveal_reference:
+            st.dataframe([reference_display_row(matched_reference)], width="stretch", hide_index=True)
+            expert_reference_rows = compare_to_reference(
+                matched_reference, classification.to_dict(), "expert"
+            )
+            expert_reference_summary = agreement_summary(expert_reference_rows)
+            a_ref, b_ref, c_ref = st.columns(3)
+            a_ref.metric("Reference domains compared", expert_reference_summary["domains_compared"])
+            b_ref.metric("Expert agreements", expert_reference_summary["domains_agreeing"])
+            c_ref.metric(
+                "Expert agreement",
+                f"{expert_reference_summary['percent_agreement']:.1f}%"
+                if expert_reference_summary["percent_agreement"] is not None
+                else "Not available",
+            )
+            st.dataframe(expert_reference_rows, width="stretch", hide_index=True)
+            if ai_result:
+                ai_reference_rows = compare_to_reference(
+                    matched_reference, ai_result["classification"], "ai"
+                )
+                ai_reference_summary = agreement_summary(ai_reference_rows)
+                st.caption(
+                    "AI versus reference: "
+                    f"{ai_reference_summary['domains_agreeing']}/{ai_reference_summary['domains_compared']} exact agreements."
+                )
+    elif evidence.study_code:
+        st.info("No pilot reference label matched this study code. Use labels such as `Case 6 day 14`.")
+
+    report_reference = matched_reference if reveal_reference else None
     report = build_report(
         evidence,
         classification,
@@ -507,6 +577,9 @@ def render_report_tab(media_summary: list[dict]) -> None:
         model_prediction=st.session_state.get("model_prediction"),
         ai_consensus=ai_result,
         agreement=agreement_summary(agreement_rows) if agreement_rows else None,
+        pilot_reference=report_reference,
+        expert_reference_agreement=(agreement_summary(expert_reference_rows) if expert_reference_rows else None),
+        ai_reference_agreement=(agreement_summary(ai_reference_rows) if ai_reference_rows else None),
     )
     c = report["classification"]
     if c["classification_status"].startswith("Final"):
@@ -555,7 +628,7 @@ def render_report_tab(media_summary: list[dict]) -> None:
         a.metric("Domains compared", summary["domains_compared"])
         b.metric("Exact agreements", summary["domains_agreeing"])
         c_metric.metric("Percent agreement", f"{summary['percent_agreement']:.1f}%")
-        st.dataframe(agreement_rows, use_container_width=True, hide_index=True)
+        st.dataframe(agreement_rows, width="stretch", hide_index=True)
         st.caption(
             "This is within-study exact agreement. Domain-specific Cohen kappa requires multiple independently graded studies."
         )
@@ -571,6 +644,9 @@ def render_report_tab(media_summary: list[dict]) -> None:
         ai_result,
         model_prediction,
         agreement_rows,
+        reference_label=report_reference,
+        expert_reference_rows=expert_reference_rows if reveal_reference else None,
+        ai_reference_rows=ai_reference_rows if reveal_reference and ai_result else None,
     )
     frame_csv_text = frame_csv(model_prediction)
     a, b, c_download, d_download = st.columns(4)
@@ -580,7 +656,7 @@ def render_report_tab(media_summary: list[dict]) -> None:
             data=json_text,
             file_name=f"{evidence.study_code or 'cus-study'}-report.json",
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
     with b:
         st.download_button(
@@ -588,7 +664,7 @@ def render_report_tab(media_summary: list[dict]) -> None:
             data=markdown_text,
             file_name=f"{evidence.study_code or 'cus-study'}-report.md",
             mime="text/markdown",
-            use_container_width=True,
+            width="stretch",
         )
     with c_download:
         st.download_button(
@@ -596,7 +672,7 @@ def render_report_tab(media_summary: list[dict]) -> None:
             data=study_csv_text,
             file_name=f"{evidence.study_code or 'cus-study'}-raw-study.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
     with d_download:
         st.download_button(
@@ -604,11 +680,17 @@ def render_report_tab(media_summary: list[dict]) -> None:
             data=frame_csv_text,
             file_name=f"{evidence.study_code or 'cus-study'}-raw-frames.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
             disabled=not bool((model_prediction or {}).get("frame_predictions")),
         )
     with st.expander("Full audit record"):
         st.json(report)
+    st.download_button(
+        "Download provisional pilot label set CSV",
+        data=reference_csv(reference_rows),
+        file_name="pilot-reference-labels-v1.csv",
+        mime="text/csv",
+    )
 
 
 def sidebar() -> None:
@@ -670,4 +752,3 @@ with evidence_tab:
     render_evidence_tab(frames, media_summary)
 with report_tab:
     render_report_tab(media_summary)
-

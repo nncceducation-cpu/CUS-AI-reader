@@ -28,6 +28,8 @@
     "right_focal_periventricular_echogenicity",
     "left_echogenicity_brighter_than_choroid",
     "right_echogenicity_brighter_than_choroid",
+    "left_porencephalic_cyst",
+    "right_porencephalic_cyst",
     "wmi_none",
     "wmi_pve_under_7_days",
     "wmi_grade_1",
@@ -49,4 +51,3 @@
   "validated": false,
   "intended_use": "Research only. Example contract, not a clinical model."
 }
-

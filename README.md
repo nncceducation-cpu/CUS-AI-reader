@@ -2,7 +2,7 @@
 
 CUS AI Reader is a research-use web application for neonatal cranial ultrasound study review. It accepts a single image, an image set, DICOM objects, or cine clips. The app decodes every frame sequentially, performs technical quality checks on every frame, and sends every frame to an installed model. The model contract identifies coronal, sagittal, posterior fossa, other, or indeterminate planes before plane-specific feature aggregation. AI feature decisions and independently entered expert findings enter the same Canadian consensus rule engine. The app displays AI grading, expert grading, exact agreement, and auditable JSON, Markdown, study-level CSV, and every-frame CSV exports.
 
-The repository also provides a guarded ONNX interface for a future validated feature model. No diagnostic weights are bundled. The software will not silently substitute heuristics or a general-purpose vision-language model for a validated neonatal ultrasound model.
+The repository also provides a guarded ONNX interface for a future validated feature model. No diagnostic weights are bundled. The software will not silently substitute heuristics or a general-purpose vision-language model for a validated neonatal ultrasound model. Version 0.5.0 includes a provisional single-reader label registry for the 15 pilot examinations. The supplied labels remain concealed until an independent expert score has been submitted.
 
 ## Safety status
 
@@ -24,6 +24,7 @@ Open the displayed local URL, accept the research-use gate, then:
 3. Run the installed model in the AI grading tab.
 4. Record an independent expert grade without accepting AI suggestions in the Expert grading tab.
 5. Review agreement and export study-level and every-frame raw CSV records.
+6. In the agreement tab, reveal a matched pilot reference label only after completing the independent read.
 
 ## Portable offline Windows edition
 
@@ -69,12 +70,14 @@ The current contract expects an ONNX output shaped `[batch, labels]`, with one p
 - `cus_ai/model.py`: guarded ONNX adapter and abstention state
 - `cus_ai/ai_consensus.py`: probability-to-feature decisions and AI consensus grading
 - `cus_ai/agreement.py`: expert versus AI agreement and raw CSV exports
+- `cus_ai/reference_labels.py`: validated pilot-label loading, study matching, and reference agreement
 - `cus_ai/clinical.py`: deterministic Canadian consensus rule engine
 - `cus_ai/reporting.py`: auditable report export
 - `docs/ALGORITHM_REVIEW.md`: evidence review and selected architecture
 - `docs/CLINICAL_SPEC.md`: clinical classification specification
 - `docs/VALIDATION_PROTOCOL.md`: development and external validation protocol
 - `docs/PILOT_DATASET_AUDIT.md`: audit and permitted role of the eight-infant pilot dataset
+- `docs/PILOT_REFERENCE_LABELS.md`: normalization decisions for the 15 supplied labels
 - `docs/AI_CONSENSUS_METHOD.md`: feature targets, abstention, and model-development method
 - `docs/DATA_DICTIONARY.md`: annotation and inference schema
 - `docs/SECURITY_PRIVACY.md`: privacy and deployment controls
@@ -95,10 +98,11 @@ The HUS Diagnostic application was used to cross-check the four-step branching a
 - Consensus rule engine: implemented and tested
 - Separate AI grading and independent expert grading: implemented
 - Expert versus AI exact agreement: implemented
+- Provisional reference-label matching and expert or AI versus reference agreement: implemented
+- Porencephalic cyst as an evolved PVHI target, separate from ischemic WMI: implemented
 - Study-level and every-frame raw CSV export: implemented
 - Structured export: implemented
 - Portable offline Windows x64 launcher and reproducible bundle: implemented
 - Diagnostic model weights: not available and not represented as complete
 - External clinical validation: not started
 - Regulatory authorization: not started
-

@@ -11,7 +11,8 @@ models/*.pt
 models/*.pth
 models/*.ckpt
 models/*.engine
-data/
+data/*
+!data/pilot_reference_labels_v1.csv
 uploads/
 reports/
 .portable-cache/

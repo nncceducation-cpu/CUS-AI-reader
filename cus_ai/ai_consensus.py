@@ -107,6 +107,14 @@ def _side_from_prediction(
     decisions: dict[str, dict[str, Any]],
 ) -> SideEvidence:
     prefix = f"{side}_"
+    cystic_answer = _answer(
+        probabilities,
+        (prefix + "porencephalic_cyst", prefix + "evolved_pvhi_cyst"),
+        thresholds,
+        decision_margin,
+        decisions,
+        prefix + "porencephalic_cyst",
+    )
     return SideEvidence(
         side=side,  # type: ignore[arg-type]
         hemorrhage_present=_answer(
@@ -173,6 +181,7 @@ def _side_from_prediction(
             decisions,
             prefix + "echogenicity_brighter_than_choroid",
         ),
+        cystic_change={"yes": "porencephalic", "no": "none", "unknown": "not_assessed"}[cystic_answer],
         clinician_verified=False,
     )
 
@@ -284,6 +293,7 @@ def grade_prediction(
             "ventricular_distension",
             "ahw_above_6_mm",
             "focal_periventricular_echogenicity",
+            "porencephalic_cyst",
         )
     ]
     missing = [name for name in required if decisions.get(name, {}).get("reason") == "model output missing"]
@@ -309,4 +319,3 @@ def grade_prediction(
         missing_outputs=missing,
         feature_decisions=decisions,
     )
-

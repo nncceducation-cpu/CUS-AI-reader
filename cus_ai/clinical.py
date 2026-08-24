@@ -3,23 +3,42 @@ from __future__ import annotations
 from .schemas import SideClassification, SideEvidence, StudyClassification, StudyEvidence
 
 
+def _classify_cystic_sequela(value: str) -> str:
+    labels = {
+        "none": "No porencephalic cyst recorded",
+        "porencephalic": "Porencephalic cyst, consistent with evolved PVHI",
+        "multiple_evolved_pvhi": "Multiple unilateral cysts, consistent with evolved PVHI",
+        "not_assessed": "Not assessed",
+    }
+    return labels.get(value, "Indeterminate cystic sequela")
+
+
 def _classify_side(e: SideEvidence) -> SideClassification:
     reasoning: list[str] = []
     warnings: list[str] = []
+    cystic_sequela = _classify_cystic_sequela(e.cystic_change)
+    evolved_pvhi = e.cystic_change in {"porencephalic", "multiple_evolved_pvhi"}
 
     if e.hemorrhage_present == "unknown":
+        unknown_reasoning = ["Hemorrhage presence was not established."]
+        if evolved_pvhi:
+            unknown_reasoning.append("A cystic lesion was recorded as the ipsilateral evolution of previous PVHI.")
         return SideClassification(
             side=e.side,
             gmh_ivh="Indeterminate",
-            pvhi="Indeterminate",
+            pvhi="Evolved PVHI with porencephalic cyst" if evolved_pvhi else "Indeterminate",
+            cystic_sequela=cystic_sequela,
             evidence_complete=False,
-            reasoning=["Hemorrhage presence was not established."],
+            reasoning=unknown_reasoning,
             warnings=["Review both coronal and parasagittal planes before classification."],
         )
 
     if e.hemorrhage_present == "no":
         reasoning.append("No germinal matrix or intraventricular hemorrhage was recorded.")
-        if e.adjacent_periventricular_echogenicity == "yes":
+        if evolved_pvhi:
+            pvhi = "Evolved PVHI with porencephalic cyst"
+            reasoning.append("The porencephalic cyst records the serial evolution of previous ipsilateral PVHI.")
+        elif e.adjacent_periventricular_echogenicity == "yes":
             pvhi = "No PVHI: PVHI requires ipsilateral GMH-IVH"
             if e.echogenicity_brighter_than_choroid != "yes":
                 warnings.append(
@@ -33,7 +52,8 @@ def _classify_side(e: SideEvidence) -> SideClassification:
             side=e.side,
             gmh_ivh="Negative for GMH-IVH",
             pvhi=pvhi,
-            evidence_complete=e.adjacent_periventricular_echogenicity != "unknown",
+            cystic_sequela=cystic_sequela,
+            evidence_complete=evolved_pvhi or e.adjacent_periventricular_echogenicity != "unknown",
             reasoning=reasoning,
             warnings=warnings,
         )
@@ -81,8 +101,11 @@ def _classify_side(e: SideEvidence) -> SideClassification:
         warnings.append("Hemorrhage location was not established.")
 
     if e.adjacent_periventricular_echogenicity == "yes":
-        pvhi = "Present"
+        pvhi = "PVHI with porencephalic cyst" if evolved_pvhi else "Present"
         reasoning.append("Ipsilateral focal periventricular echogenicity accompanies GMH-IVH, meeting the PVHI rule.")
+    elif evolved_pvhi:
+        pvhi = "Evolved PVHI with porencephalic cyst"
+        reasoning.append("The cystic lesion records the serial evolution of previous ipsilateral PVHI.")
     elif e.adjacent_periventricular_echogenicity == "no":
         pvhi = "Not present"
     else:
@@ -97,6 +120,7 @@ def _classify_side(e: SideEvidence) -> SideClassification:
         side=e.side,
         gmh_ivh=grade,
         pvhi=pvhi,
+        cystic_sequela=cystic_sequela,
         evidence_complete=complete,
         reasoning=reasoning,
         warnings=warnings,
@@ -132,6 +156,8 @@ def _classify_phvd(e: StudyEvidence) -> str:
     ahw_above_6 = any(side.ahw_above_6_mm == "yes" for side in (e.left, e.right))
     ahw_above_10 = any(side.ahw_above_10_mm == "yes" for side in (e.left, e.right))
     if e.prior_gmh_ivh == "no":
+        if e.vi_above_97th == "no" and not ahw_above_6 and (max_ahw is None or max_ahw <= 6):
+            return "No moderate or severe PHVD by recorded thresholds"
         return "Not PHVD: no preceding GMH-IVH recorded"
     if e.prior_gmh_ivh == "unknown":
         return "Indeterminate: preceding GMH-IVH status is unknown"
@@ -153,7 +179,11 @@ def classify_study(e: StudyEvidence) -> StudyClassification:
 
     severe_reasons: list[str] = []
     for side in (left, right):
-        if side.gmh_ivh == "Grade III GMH-IVH" or side.pvhi == "Present":
+        if side.gmh_ivh == "Grade III GMH-IVH" or side.pvhi in {
+            "Present",
+            "PVHI with porencephalic cyst",
+            "Evolved PVHI with porencephalic cyst",
+        }:
             severe_reasons.append(f"{side.side}: {side.gmh_ivh}, PVHI {side.pvhi.lower()}")
     if e.wmi_pattern in {"grade_2", "grade_3", "grade_4"}:
         severe_reasons.append("cystic white matter injury")
@@ -222,4 +252,3 @@ def classify_study(e: StudyEvidence) -> StudyClassification:
         ),
         limitations=limitations,
     )
-

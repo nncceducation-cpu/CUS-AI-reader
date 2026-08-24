@@ -13,9 +13,12 @@ def build_report(
     model_prediction: dict[str, Any] | None = None,
     ai_consensus: dict[str, Any] | None = None,
     agreement: dict[str, Any] | None = None,
+    pilot_reference: dict[str, Any] | None = None,
+    expert_reference_agreement: dict[str, Any] | None = None,
+    ai_reference_agreement: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
-        "schema_version": "0.4.0",
+        "schema_version": "0.5.0",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "intended_use": "Research and quality improvement prototype only",
         "diagnostic_status": "Not a diagnostic report",
@@ -33,6 +36,9 @@ def build_report(
         "model_prediction": model_prediction,
         "ai_consensus": ai_consensus,
         "expert_ai_agreement": agreement,
+        "pilot_reference": pilot_reference,
+        "expert_reference_agreement": expert_reference_agreement,
+        "ai_reference_agreement": ai_reference_agreement,
         "required_human_review": True,
     }
 
@@ -51,8 +57,8 @@ def report_to_markdown(report: dict[str, Any]) -> str:
         "## Consensus classification",
         "",
         f"- Status: {c['classification_status']}",
-        f"- Left: {c['left']['gmh_ivh']}; PVHI: {c['left']['pvhi']}",
-        f"- Right: {c['right']['gmh_ivh']}; PVHI: {c['right']['pvhi']}",
+        f"- Left: {c['left']['gmh_ivh']}; PVHI: {c['left']['pvhi']}; cystic sequela: {c['left']['cystic_sequela']}",
+        f"- Right: {c['right']['gmh_ivh']}; PVHI: {c['right']['pvhi']}; cystic sequela: {c['right']['cystic_sequela']}",
         f"- White matter injury: {c['wmi']}",
         f"- Cerebellar hemorrhage: {c['cerebellar_hemorrhage']}",
         f"- PHVD: {c['phvd']}",
@@ -70,8 +76,8 @@ def report_to_markdown(report: dict[str, Any]) -> str:
                 "## AI grading",
                 "",
                 f"- Abstained: {ai['abstained']}",
-                f"- Left: {ai_c['left']['gmh_ivh']}; PVHI: {ai_c['left']['pvhi']}",
-                f"- Right: {ai_c['right']['gmh_ivh']}; PVHI: {ai_c['right']['pvhi']}",
+                f"- Left: {ai_c['left']['gmh_ivh']}; PVHI: {ai_c['left']['pvhi']}; cystic sequela: {ai_c['left']['cystic_sequela']}",
+                f"- Right: {ai_c['right']['gmh_ivh']}; PVHI: {ai_c['right']['pvhi']}; cystic sequela: {ai_c['right']['cystic_sequela']}",
                 f"- White matter injury: {ai_c['wmi']}",
                 f"- Cerebellar hemorrhage: {ai_c['cerebellar_hemorrhage']}",
                 f"- PHVD: {ai_c['phvd']}",
@@ -89,6 +95,29 @@ def report_to_markdown(report: dict[str, Any]) -> str:
                     f"- Percent agreement: {agreement['percent_agreement']:.1f}%",
                 ]
             )
+    pilot_reference = report.get("pilot_reference")
+    if pilot_reference:
+        lines.extend(
+            [
+                "",
+                "## Provisional pilot reference",
+                "",
+                f"- Status: {pilot_reference['reference_status']}",
+                f"- Provided label: {pilot_reference['raw_label']}",
+            ]
+        )
+        for label, key in (
+            ("Expert versus reference", "expert_reference_agreement"),
+            ("AI versus reference", "ai_reference_agreement"),
+        ):
+            comparison = report.get(key)
+            if comparison and comparison["domains_compared"]:
+                lines.extend(
+                    [
+                        f"- {label}: {comparison['domains_agreeing']}/{comparison['domains_compared']} "
+                        f"({comparison['percent_agreement']:.1f}%)",
+                    ]
+                )
     lines.extend(["", "## Limitations", ""])
     limitations = c.get("limitations") or ["No additional limitation recorded."]
     lines.extend(f"- {item}" for item in limitations)
@@ -103,4 +132,3 @@ def report_to_markdown(report: dict[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
-

@@ -105,3 +105,40 @@ def test_final_status_requires_verified_planes_and_serial_domains():
     result = classify_study(evidence)
     assert result.classification_status.startswith("Final consensus classification")
     assert result.view_coverage["coronal"] is True
+
+
+def test_porencephalic_cyst_is_recorded_as_evolved_pvhi_not_ischemic_wmi():
+    evidence = StudyEvidence(
+        study_code="H",
+        left=SideEvidence(
+            side="left",
+            hemorrhage_present="no",
+            adjacent_periventricular_echogenicity="no",
+            cystic_change="porencephalic",
+            clinician_verified=True,
+        ),
+        right=blank_right(),
+        wmi_pattern="none",
+    )
+    result = classify_study(evidence)
+    assert result.left.pvhi == "Evolved PVHI with porencephalic cyst"
+    assert result.left.cystic_sequela == "Porencephalic cyst, consistent with evolved PVHI"
+    assert result.wmi == "No ischemic WMI pattern recorded"
+    assert "left" in result.severe_preterm_brain_injury_flag
+
+
+def test_normal_ventricles_without_prior_hemorrhage_are_negative_for_phvd():
+    evidence = StudyEvidence(
+        study_code="I",
+        left=SideEvidence(
+            side="left",
+            hemorrhage_present="no",
+            adjacent_periventricular_echogenicity="no",
+            clinician_verified=True,
+        ),
+        right=blank_right(),
+        prior_gmh_ivh="no",
+        vi_above_97th="no",
+        vi_above_97th_plus_4mm="no",
+    )
+    assert classify_study(evidence).phvd == "No moderate or severe PHVD by recorded thresholds"

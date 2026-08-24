@@ -10,8 +10,10 @@ from typing import Any
 AGREEMENT_FIELDS = {
     "Left GMH-IVH": ("left", "gmh_ivh"),
     "Left PVHI": ("left", "pvhi"),
+    "Left cystic sequela": ("left", "cystic_sequela"),
     "Right GMH-IVH": ("right", "gmh_ivh"),
     "Right PVHI": ("right", "pvhi"),
+    "Right cystic sequela": ("right", "cystic_sequela"),
     "White matter injury": ("wmi",),
     "Cerebellar hemorrhage": ("cerebellar_hemorrhage",),
     "PHVD": ("phvd",),
@@ -82,6 +84,9 @@ def study_csv(
     ai_result: dict[str, Any] | None,
     model_prediction: dict[str, Any] | None,
     agreement_rows: list[dict[str, Any]],
+    reference_label: dict[str, Any] | None = None,
+    expert_reference_rows: list[dict[str, Any]] | None = None,
+    ai_reference_rows: list[dict[str, Any]] | None = None,
 ) -> str:
     row: dict[str, Any] = {}
     _flatten("expert_evidence", expert_evidence, row)
@@ -92,6 +97,12 @@ def study_csv(
         model_study = {key: value for key, value in model_prediction.items() if key != "frame_predictions"}
         _flatten("model", model_study, row)
     _flatten("agreement", agreement_summary(agreement_rows), row)
+    if reference_label:
+        _flatten("pilot_reference", reference_label, row)
+    if expert_reference_rows is not None:
+        _flatten("expert_reference_agreement", agreement_summary(expert_reference_rows), row)
+    if ai_reference_rows is not None:
+        _flatten("ai_reference_agreement", agreement_summary(ai_reference_rows), row)
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=list(row))
     writer.writeheader()
@@ -115,4 +126,3 @@ def frame_csv(model_prediction: dict[str, Any] | None) -> str:
     writer.writeheader()
     writer.writerows(rows)
     return buffer.getvalue()
-

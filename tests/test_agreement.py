@@ -3,8 +3,16 @@ from cus_ai.agreement import agreement_summary, compare_classifications, frame_c
 
 def classification(left_grade: str) -> dict:
     return {
-        "left": {"gmh_ivh": left_grade, "pvhi": "Not present"},
-        "right": {"gmh_ivh": "Negative for GMH-IVH", "pvhi": "Not present"},
+        "left": {
+            "gmh_ivh": left_grade,
+            "pvhi": "Not present",
+            "cystic_sequela": "No porencephalic cyst recorded",
+        },
+        "right": {
+            "gmh_ivh": "Negative for GMH-IVH",
+            "pvhi": "Not present",
+            "cystic_sequela": "No porencephalic cyst recorded",
+        },
         "wmi": "No ischemic WMI pattern recorded",
         "cerebellar_hemorrhage": "No cerebellar hemorrhage recorded",
         "phvd": "No moderate or severe PHVD by recorded thresholds",
@@ -17,8 +25,8 @@ def test_agreement_rows_and_raw_csv_exports():
     ai = classification("Grade II GMH-IVH")
     rows = compare_classifications(expert, ai)
     summary = agreement_summary(rows)
-    assert summary["domains_compared"] == 8
-    assert summary["domains_agreeing"] == 7
+    assert summary["domains_compared"] == 10
+    assert summary["domains_agreeing"] == 9
     prediction = {
         "model_id": "test",
         "frame_predictions": [
@@ -38,4 +46,3 @@ def test_agreement_rows_and_raw_csv_exports():
     assert "agreement.percent_agreement" in study
     assert "probability.left_ivh" in frames
     assert "clip.avi" in frames
-

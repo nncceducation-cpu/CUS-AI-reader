@@ -16,7 +16,7 @@ if (-not $CacheDirectory) {
     $CacheDirectory = Join-Path $repoRoot ".portable-cache"
 }
 
-$appVersion = "0.4.0"
+$appVersion = "0.5.0"
 $bundleName = "CUS-AI-reader-offline-windows-x64-v$appVersion"
 $portableFolderName = "CUSAI"
 $stageContainer = Join-Path ([System.IO.Path]::GetTempPath()) "CUSAI-portable-build"
@@ -106,7 +106,7 @@ $filesToCopy = @(
 foreach ($relativePath in $filesToCopy) {
     Copy-Item -LiteralPath (Join-Path $repoRoot $relativePath) -Destination (Join-Path $stageRoot $relativePath)
 }
-foreach ($folder in @("cus_ai", "models", ".streamlit", "docs")) {
+foreach ($folder in @("cus_ai", "data", "models", ".streamlit", "docs")) {
     Copy-Item -LiteralPath (Join-Path $repoRoot $folder) -Destination (Join-Path $stageRoot $folder) -Recurse
 }
 
@@ -169,4 +169,3 @@ Write-Host "Portable bundle created:"
 Write-Host $archivePath
 Write-Host "The ZIP contains the short root folder: $portableFolderName"
 Write-Host "SHA256: $archiveHash"
-

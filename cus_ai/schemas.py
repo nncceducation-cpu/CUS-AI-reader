@@ -20,6 +20,7 @@ class SideEvidence:
     ahw_above_10_mm: Answer = "unknown"
     adjacent_periventricular_echogenicity: Answer = "unknown"
     echogenicity_brighter_than_choroid: Answer = "unknown"
+    cystic_change: str = "not_assessed"
     clinician_verified: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -29,6 +30,8 @@ class SideEvidence:
 @dataclass(slots=True)
 class StudyEvidence:
     study_code: str
+    expert_reader_code: str | None = None
+    expert_review_round: str = "independent"
     postnatal_age_days: float | None = None
     gestational_age_weeks: float | None = None
     left: SideEvidence = field(default_factory=lambda: SideEvidence(side="left"))
@@ -60,6 +63,7 @@ class SideClassification:
     side: Side
     gmh_ivh: str
     pvhi: str
+    cystic_sequela: str
     evidence_complete: bool
     reasoning: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -82,4 +86,3 @@ class StudyClassification:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

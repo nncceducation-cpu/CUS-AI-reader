@@ -11,6 +11,7 @@ def complete_prediction() -> dict:
         "left_ahw_above_10_mm": 0.10,
         "left_focal_periventricular_echogenicity": 0.90,
         "left_echogenicity_brighter_than_choroid": 0.90,
+        "left_porencephalic_cyst": 0.10,
         "right_germinal_matrix_hemorrhage": 0.10,
         "right_confined_to_germinal_matrix": 0.10,
         "right_intraventricular_blood": 0.10,
@@ -19,6 +20,7 @@ def complete_prediction() -> dict:
         "right_ahw_above_10_mm": 0.10,
         "right_focal_periventricular_echogenicity": 0.10,
         "right_echogenicity_brighter_than_choroid": 0.10,
+        "right_porencephalic_cyst": 0.10,
         "wmi_none": 0.90,
         "wmi_pve_under_7_days": 0.10,
         "wmi_grade_1": 0.10,
@@ -65,4 +67,3 @@ def test_missing_serial_evidence_forces_final_grade_abstention():
     result = grade_prediction(complete_prediction(), serial_study_available=False)
     assert result.abstained
     assert "serial evidence was not supplied for WMI evolution and PHVD trajectory" in result.abstention_reasons
-

@@ -58,6 +58,10 @@ Abnormal periventricular echogenicity is brighter than the choroid plexus or inh
 
 Ischemic WMI is more often bilateral. PVHI is commonly asymmetric and ipsilateral to GMH-IVH. Serial studies help distinguish unilateral cystic evolution of PVHI from ischemic WMI.
 
+## Porencephalic cyst and evolved PVHI
+
+A porencephalic cyst developing at the site of previous PVHI is recorded as a cystic sequela of hemorrhagic injury. It must remain separate from the ischemic WMI grade. The acute or first-week GMH-IVH grade, current hemorrhage appearance, previous PVHI, and cystic sequela are stored in separate fields so serial evolution can be reconstructed.
+
 ## Cerebellar hemorrhage
 
 Use the mastoid window and assess in two planes when possible:
