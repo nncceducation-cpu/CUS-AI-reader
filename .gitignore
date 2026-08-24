@@ -25,3 +25,7 @@ portable-build/
 *.avi
 .DS_Store
 Thumbs.db
+
+# Site-specific learning artefacts, never committed
+data/corrections.jsonl
+models/learned_parameters.json

@@ -2,11 +2,13 @@
   "model_id": "cus-multitask-example",
   "version": "0.0.0",
   "onnx_file": "cus-multitask-example.onnx",
-  "input_size": [512, 512],
+  "input_size": [
+    512,
+    512
+  ],
   "batch_size": 16,
   "plane_confidence_threshold": 0.7,
   "plane_margin": 0.1,
-  "aggregation_top_k": 3,
   "decision_margin": 0.05,
   "labels": [
     "adequate_plane",
@@ -41,13 +43,67 @@
     "cbh_limited",
     "cbh_large",
     "vi_above_97th",
-    "vi_above_97th_plus_4_mm"
+    "vi_above_97th_plus_4_mm",
+    "left_hemorrhage_present",
+    "right_hemorrhage_present",
+    "left_multiple_evolved_pvhi_cysts",
+    "right_multiple_evolved_pvhi_cysts"
   ],
   "thresholds": {
     "adequate_plane": 0.8,
     "left_germinal_matrix_hemorrhage": 0.5,
-    "right_germinal_matrix_hemorrhage": 0.5
+    "right_germinal_matrix_hemorrhage": 0.5,
+    "left_intraventricular_blood": 0.5,
+    "right_intraventricular_blood": 0.5,
+    "left_focal_periventricular_echogenicity": 0.5,
+    "right_focal_periventricular_echogenicity": 0.5
   },
   "validated": false,
-  "intended_use": "Research only. Example contract, not a clinical model."
+  "intended_use": "Research only. Example contract, not a clinical model. Replace calibration and thresholds with values fitted by scripts/fit_operating_point.py on your own labelled studies before any reporting use.",
+  "aggregation_mode": "persistence",
+  "aggregation": {
+    "min_frames": 2,
+    "min_run": 3,
+    "persistence_fraction": 0.02,
+    "prevalence_threshold": 0.5,
+    "use_quality_weights": true,
+    "require_two_planes": true,
+    "label_plane_scope": {
+      "cbh_": [
+        "posterior_fossa"
+      ],
+      "vi_": [
+        "coronal"
+      ],
+      "left_ahw_": [
+        "coronal"
+      ],
+      "right_ahw_": [
+        "coronal"
+      ],
+      "wmi_": [
+        "coronal",
+        "sagittal"
+      ]
+    }
+  },
+  "softmax_groups": [
+    "wmi",
+    "cerebellar_hemorrhage"
+  ],
+  "calibration": {
+    "temperature": 1.0,
+    "per_label": {
+      "left_germinal_matrix_hemorrhage": {
+        "method": "platt",
+        "slope": 1.0,
+        "intercept": 0.0
+      },
+      "right_germinal_matrix_hemorrhage": {
+        "method": "platt",
+        "slope": 1.0,
+        "intercept": 0.0
+      }
+    }
+  }
 }
