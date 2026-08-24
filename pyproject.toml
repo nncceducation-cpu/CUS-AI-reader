@@ -1,0 +1,10 @@
+[project]
+name = "cus-ai-reader"
+version = "0.1.0"
+description = "Research prototype for neonatal cranial ultrasound review"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+

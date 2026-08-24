@@ -1,0 +1,6 @@
+streamlit>=1.39,<2
+numpy>=1.26,<3
+pillow>=10.4,<13
+pydicom>=3,<4
+opencv-python-headless>=4.10,<5
+

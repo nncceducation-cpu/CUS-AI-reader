@@ -1,0 +1,26 @@
+{
+  "model_id": "cus-multitask-example",
+  "version": "0.0.0",
+  "onnx_file": "cus-multitask-example.onnx",
+  "input_size": [512, 512],
+  "labels": [
+    "adequate_plane",
+    "left_germinal_matrix_hemorrhage",
+    "right_germinal_matrix_hemorrhage",
+    "left_intraventricular_blood",
+    "right_intraventricular_blood",
+    "left_ventricular_distension",
+    "right_ventricular_distension",
+    "left_focal_periventricular_echogenicity",
+    "right_focal_periventricular_echogenicity",
+    "cerebellar_hemorrhage"
+  ],
+  "thresholds": {
+    "adequate_plane": 0.8,
+    "left_germinal_matrix_hemorrhage": 0.5,
+    "right_germinal_matrix_hemorrhage": 0.5
+  },
+  "validated": false,
+  "intended_use": "Research only. Example contract, not a clinical model."
+}
+
