@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import streamlit as st
@@ -19,13 +20,23 @@ from cus_ai.reference_labels import (
     reference_csv,
     reference_display_row,
 )
+from cus_ai.learning import (
+    Correction,
+    CorrectionStore,
+    ParameterHistory,
+    fit_from_corrections,
+    training_export,
+    truth_from_evidence,
+)
 from cus_ai.reporting import build_report, report_to_markdown
 from cus_ai.schemas import SideEvidence, StudyEvidence
 
 
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 ROOT = Path(__file__).parent
 MODEL_DIR = ROOT / "models"
+CORRECTION_PATH = ROOT / "data" / "corrections.jsonl"
+LEARNED_PATH = MODEL_DIR / "learned_parameters.json"
 REFERENCE_LABEL_PATH = ROOT / "data" / "pilot_reference_labels_v1.csv"
 OFFLINE_MODE = os.environ.get("CUS_AI_OFFLINE", "0") == "1"
 
@@ -286,6 +297,11 @@ def render_model_panel(frames: list[MediaFrame], media_summary: list[dict]) -> N
     if st.button("Analyze every frame with installed model", disabled=not can_run):
         with st.spinner(f"Analyzing all {len(frames)} frames in order..."):
             try:
+                learned = ParameterHistory(LEARNED_PATH).load()
+                if learned.version:
+                    _, manifest.calibration = learned.apply_to(
+                        manifest.thresholds, manifest.calibration
+                    )
                 model = OnnxFeatureModel(MODEL_DIR, manifest)
                 prediction = model.predict(frames)
                 prediction_json = prediction_to_json(prediction)
@@ -293,9 +309,12 @@ def render_model_panel(frames: list[MediaFrame], media_summary: list[dict]) -> N
                 all_frames_processed = bool(media_summary) and all(
                     bool(item.get("all_frames_processed")) for item in media_summary
                 )
+                effective_thresholds, _ = learned.apply_to(
+                    manifest.thresholds, manifest.calibration
+                )
                 ai_result = grade_prediction(
                     prediction_json,
-                    thresholds=manifest.thresholds,
+                    thresholds=effective_thresholds,
                     decision_margin=manifest.decision_margin,
                     all_frames_processed=all_frames_processed,
                 )
@@ -769,6 +788,214 @@ def render_report_tab(media_summary: list[dict]) -> None:
     )
 
 
+def render_learning_tab() -> None:
+    st.subheader("5. Correct the AI and retrain")
+    st.write(
+        "Record what the AI got wrong, and the decision thresholds and calibration are refitted "
+        "from your own reads. Nothing changes unless the refit beats the current settings on "
+        "studies it was not fitted to."
+    )
+
+    store = CorrectionStore(CORRECTION_PATH)
+    history = ParameterHistory(LEARNED_PATH)
+    learned = history.load()
+
+    ai_result = st.session_state.get("ai_consensus_result")
+    prediction = st.session_state.get("model_prediction")
+    evidence = st.session_state.get("study_evidence")
+    classification = st.session_state.get("study_classification")
+
+    st.markdown("### Record this study")
+    if not (prediction and evidence):
+        st.info(
+            "Run the model in the AI grading tab and record an expert grade in the Expert grading "
+            "tab, then this study can be added as a correction."
+        )
+    else:
+        blinded = st.checkbox(
+            "I recorded my grade before looking at the AI output",
+            value=True,
+            help=(
+                "A grade written after seeing the AI is an edited copy of the model's own answer, "
+                "not an independent label. Fitting on those teaches the model to agree with "
+                "itself. Unblinded corrections are still stored for audit, but they are excluded "
+                "from every fit."
+            ),
+        )
+        reader = st.text_input("Reader code", value=st.session_state.get("reader_code", ""))
+        infant = st.text_input(
+            "Infant code",
+            value=st.session_state.get("infant_code", ""),
+            help=(
+                "Studies from one infant are not independent. Cross-validation holds out whole "
+                "infants, so this field is what keeps the held-out estimate honest."
+            ),
+        )
+        note = st.text_input("Note, optional")
+        if not blinded:
+            st.warning(
+                "This will be stored for the audit trail but will not be used to adjust anything."
+            )
+        if st.button("Add this study to the correction log", disabled=not (reader and infant)):
+            correction = Correction(
+                study_code=evidence.study_code,
+                infant_code=infant.strip(),
+                reader_code=reader.strip(),
+                recorded_at_utc=datetime.now(timezone.utc).isoformat(),
+                model_id=str(prediction.get("model_id", "")),
+                model_version=str(prediction.get("model_version", "")),
+                blinded_to_ai=bool(blinded),
+                probabilities={k: float(v) for k, v in (prediction.get("probabilities") or {}).items()},
+                truth=truth_from_evidence(evidence),
+                ai_classification=(ai_result or {}).get("classification", {}),
+                expert_classification=classification.to_dict() if classification else {},
+                note=note.strip(),
+            )
+            store.append(correction)
+            st.session_state.reader_code = reader
+            st.session_state.infant_code = infant
+            st.success(
+                f"Recorded {len(correction.truth)} corrected findings for {correction.study_code}."
+            )
+
+    st.markdown("### What has been collected")
+    summary = store.summary()
+    a, b, c, d = st.columns(4)
+    a.metric("Corrections", summary["total_corrections"])
+    b.metric("Usable for fitting", summary["eligible_for_fitting"])
+    c.metric("Infants", summary["infants"])
+    d.metric("Excluded, not blinded", summary["excluded_not_blinded"])
+
+    st.markdown("### Current learned settings")
+    if not learned.version:
+        st.info(
+            "Nothing has been learned yet. The shipped manifest thresholds are in use."
+        )
+    else:
+        st.write(
+            f"Version {learned.version}, fitted from {learned.corrections_used} corrections across "
+            f"{learned.infants_used} infants, sensitivity floor {learned.min_sensitivity:.2f}. "
+            f"Updated {learned.updated_at_utc}."
+        )
+        if learned.thresholds:
+            st.dataframe(
+                [{"finding": k, "learned threshold": v} for k, v in sorted(learned.thresholds.items())],
+                width="stretch",
+                hide_index=True,
+            )
+        else:
+            st.write("No finding has yet earned a change from its shipped setting.")
+
+    st.markdown("### Refit")
+    floor = st.slider(
+        "Sensitivity this screen must hold",
+        min_value=0.80,
+        max_value=1.00,
+        value=float(learned.min_sensitivity or 0.95),
+        step=0.01,
+        help=(
+            "A clinical setting, not a technical one. No refit is adopted if its out-of-fold "
+            "sensitivity falls below this."
+        ),
+    )
+    if st.button("Refit from the correction log"):
+        candidate = fit_from_corrections(
+            store.load(),
+            current_thresholds=learned.thresholds or {},
+            current_version=learned.version,
+            min_sensitivity=floor,
+        )
+        st.session_state.candidate_parameters = candidate.to_dict()
+
+    if candidate_dict := st.session_state.get("candidate_parameters"):
+        from cus_ai.learning import LearnedParameters as _LP
+
+        candidate = _LP.from_dict(candidate_dict)
+        promoted = [f for f in candidate.fits if f.get("promoted")]
+        st.write(
+            f"{len(promoted)} of {len(candidate.fits)} findings earned a change."
+        )
+        st.dataframe(
+            [
+                {
+                    "finding": f.get("label"),
+                    "adopted": f.get("promoted"),
+                    "tier": f.get("tier"),
+                    "positives": f.get("positives"),
+                    "negatives": f.get("negatives"),
+                    "held-out AUC": f.get("holdout_auc"),
+                    "sensitivity": f.get("candidate_sensitivity"),
+                    "sensitivity lower bound": f.get("candidate_sensitivity_lower_bound"),
+                    "held-out positives": f.get("held_out_positives"),
+                    "why": f.get("reason"),
+                }
+                for f in candidate.fits
+            ],
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption(
+            "Sensitivity is a point estimate on the held-out positives listed. The lower bound is "
+            "what that estimate actually guarantees, and on small numbers the two are far apart."
+        )
+        if promoted:
+            if st.button("Adopt these settings"):
+                history.save(candidate)
+                st.session_state.pop("candidate_parameters", None)
+                st.success(f"Adopted version {candidate.version}.")
+        else:
+            st.info(
+                "Nothing is adopted. Every finding either lacks enough corrections or failed to "
+                "beat its current setting on held-out data. Keep reading studies."
+            )
+
+    if history.versions():
+        with st.expander("Version history and rollback"):
+            st.dataframe(
+                [
+                    {
+                        "version": v.get("version"),
+                        "updated": v.get("updated_at_utc"),
+                        "corrections": v.get("corrections_used"),
+                        "infants": v.get("infants_used"),
+                        "findings changed": len(v.get("thresholds") or {}),
+                    }
+                    for v in history.versions()
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+            if st.button("Roll back to the previous version"):
+                restored = history.rollback()
+                st.success(
+                    f"Rolled back to version {restored.version}." if restored else "Nothing to roll back to."
+                )
+
+    st.markdown("### Export the corrections as a training set")
+    st.write(
+        "Threshold tuning helps at the margin. The durable value of this log is that every "
+        "correction is a labelled example, and a few hundred of them is what lets a model be "
+        "trained on Canadian consensus targets rather than borrowed from another population."
+    )
+    rows = training_export(store.load())
+    if rows:
+        import csv as _csv
+        import io as _io
+
+        buffer = _io.StringIO()
+        writer = _csv.DictWriter(buffer, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+        st.download_button(
+            f"Download {len(rows)} labelled rows as CSV",
+            data=buffer.getvalue(),
+            file_name="cus_ai_training_set.csv",
+            mime="text/csv",
+        )
+    else:
+        st.caption("No corrections recorded yet.")
+
+
 def sidebar() -> None:
     st.sidebar.title("CUS AI Reader")
     st.sidebar.caption(f"Research prototype v{APP_VERSION}")
@@ -817,8 +1044,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-media_tab, ai_tab, evidence_tab, report_tab = st.tabs(
-    ["Media", "AI grading", "Expert grading", "Agreement and export"]
+media_tab, ai_tab, evidence_tab, report_tab, learning_tab = st.tabs(
+    ["Media", "AI grading", "Expert grading", "Agreement and export", "Correct and retrain"]
 )
 with media_tab:
     frames, media_summary, _ = render_media_tab()
@@ -828,3 +1055,5 @@ with evidence_tab:
     render_evidence_tab(frames, media_summary)
 with report_tab:
     render_report_tab(media_summary)
+with learning_tab:
+    render_learning_tab()
