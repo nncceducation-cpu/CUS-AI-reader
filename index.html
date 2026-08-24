@@ -1,535 +1,978 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="en"><head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CUS AI Reader v0.6.0</title></head><body>
+<title>CUS AI Reader</title>
+<meta name="description" content="Canadian consensus grading of preterm brain injury on cranial ultrasound. Runs entirely in your browser.">
 <style>
-  :root{
-    --bg:#f7f6f3; --panel:#ffffff; --ink:#1c1b19; --muted:#6b6862;
-    --line:#e2ded6; --line-soft:#efece6;
-    --accent:#8a3324; --accent-soft:#f4e9e6;
-    --good:#2f6b4f; --good-soft:#e8f1ec;
-    --bad:#9a3b2e; --warn:#8a6d1f; --warn-soft:#f7f0dd;
-    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+:root{
+  --bg:#f6f5f2; --panel:#fff; --ink:#1b1a18; --muted:#6a6660;
+  --line:#e3dfd8; --soft:#f0ede7;
+  --accent:#8a3324; --accent-soft:#f5eae7;
+  --good:#2f6b4f; --good-soft:#e9f2ed;
+  --bad:#9a3b2e; --bad-soft:#fbeae7;
+  --warn:#8a6d1f; --warn-soft:#f8f1de;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#15140f; --panel:#1e1d17; --ink:#ecebe3; --muted:#a39e92;
+  --line:#332f26; --soft:#26241d;
+  --accent:#d98b73; --accent-soft:#2b201b;
+  --good:#7ec49c; --good-soft:#1b2721;
+  --bad:#e08d7c; --bad-soft:#2c1d19;
+  --warn:#d4b463; --warn-soft:#292315;
+}}
+:root[data-theme="dark"]{
+  --bg:#15140f; --panel:#1e1d17; --ink:#ecebe3; --muted:#a39e92;
+  --line:#332f26; --soft:#26241d; --accent:#d98b73; --accent-soft:#2b201b;
+  --good:#7ec49c; --good-soft:#1b2721; --bad:#e08d7c; --bad-soft:#2c1d19;
+  --warn:#d4b463; --warn-soft:#292315;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0 0 .5rem;line-height:1.25}
+h2{font-size:1.05rem;letter-spacing:.01em}
+p{margin:0 0 .6rem}
+button{font:inherit;cursor:pointer}
+input,select{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:.42rem .55rem;width:100%}
+input[type=checkbox]{width:auto;margin-right:.4rem}
+input[type=range]{padding:0;border:0;background:transparent;accent-color:var(--accent)}
+
+/* gate */
+.gate{position:fixed;inset:0;display:grid;place-items:center;padding:24px;background:var(--bg);z-index:50;overflow:auto}
+.gate-card{max-width:560px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:32px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+.gate-card h1{font-size:1.6rem;margin-bottom:14px}
+.primary{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:.7rem 1.2rem;font-weight:600;margin-top:10px}
+.fineprint{font-size:.8rem;color:var(--muted)}
+
+/* chrome */
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 22px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:20;flex-wrap:wrap}
+.brand{font-weight:700;letter-spacing:-.01em}
+.tag{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:12px}
+.ghost{background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:.4rem .7rem;color:var(--ink)}
+.ghost:hover{border-color:var(--accent);color:var(--accent)}
+.ghost.small{padding:.25rem .5rem;font-size:.8rem}
+
+.layout{display:grid;grid-template-columns:minmax(320px,1fr) minmax(360px,1.15fr) minmax(320px,1fr);gap:18px;padding:18px 22px 60px;align-items:start;max-width:1800px;margin:0 auto}
+@media(max-width:1300px){.layout{grid-template-columns:1fr 1fr}.result{grid-column:1/-1}}
+@media(max-width:860px){.layout{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:18px}
+.hint{font-size:.85rem;color:var(--muted)}
+
+/* viewer */
+.filelist{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.filechip{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:.28rem .55rem;font-size:.78rem;font-family:var(--mono);color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filechip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.stage{position:relative;background:#000;border-radius:9px;overflow:hidden;aspect-ratio:1/1;display:grid;place-items:center;margin-top:8px}
+.stage.empty{background:var(--soft)}
+.stage-empty{color:var(--muted);font-size:.85rem;margin:0}
+#video,#still{width:100%;height:100%;object-fit:contain;display:block}
+.controls{margin-top:10px}
+.transport{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.timecode{font-family:var(--mono);font-size:.78rem;color:var(--muted);margin-left:auto}
+.viewtools{display:flex;gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap;font-size:.78rem;color:var(--muted)}
+.viewtools label{display:flex;align-items:center;gap:6px}
+.viewtools input[type=range]{width:90px}
+
+/* grading */
+fieldset{border:1px solid var(--line);border-radius:9px;padding:14px;margin:0 0 14px}
+legend{font-weight:650;font-size:.85rem;padding:0 6px;color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:520px){.grid2{grid-template-columns:1fr}}
+label{display:block;font-size:.82rem;color:var(--muted);margin-bottom:6px}
+label.block{margin-bottom:10px}
+.checkrow{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+.checkrow label{display:flex;align-items:center;color:var(--ink);font-size:.85rem;margin:0}
+.sides{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:760px){.sides{grid-template-columns:1fr}}
+.step{padding:10px 0;border-bottom:1px solid var(--soft)}
+.step:last-child{border-bottom:0}
+.step.dimmed{opacity:.4}
+.step-q{font-size:.86rem;margin-bottom:7px}
+.stepno{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 5px;margin-right:6px}
+.opts{display:flex;flex-wrap:wrap;gap:5px}
+.opt{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:.28rem .6rem;font-size:.8rem;color:var(--ink)}
+.opt:hover{border-color:var(--accent)}
+.opt.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.step-help{font-size:.76rem;color:var(--muted);margin:6px 0 0}
+
+/* result */
+.flag{border-radius:8px;padding:.6rem .8rem;font-weight:600;font-size:.88rem;margin-bottom:10px}
+.flag.ok{background:var(--good-soft);color:var(--good)}
+.flag.bad{background:var(--bad-soft);color:var(--bad)}
+.status{font-size:.8rem;color:var(--muted);margin-bottom:12px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:620px){.two{grid-template-columns:1fr}}
+.sideres{background:var(--soft);border-radius:8px;padding:12px}
+.sideres h4{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-family:var(--mono)}
+.big{font-weight:650;font-size:.95rem;margin:.2rem 0 .5rem}
+.kv{font-size:.8rem;margin:.2rem 0}
+.kv span{color:var(--muted)}
+.why,.warn{font-size:.76rem;margin:.5rem 0 0;padding-left:1.1rem}
+.why{color:var(--muted)}
+.warn{color:var(--warn)}
+.studyres{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.limits{margin-top:12px;background:var(--warn-soft);border-radius:8px;padding:12px}
+.limits h4{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--warn);font-family:var(--mono)}
+.limits ul{margin:.4rem 0 0;padding-left:1.1rem;font-size:.78rem}
+.exports{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 10px}
+
+@media print{
+  .viewer,.grading,.topbar,.exports,.gate{display:none!important}
+  .layout{grid-template-columns:1fr;padding:0}
+  .panel{border:0}
+  body{background:#fff;color:#000}
+}
+
+</style>
+</head>
+<body>
+<div id="gate" class="gate">
+  <div class="gate-card">
+    <p class="eyebrow">CUS AI Reader · consensus grading tool</p>
+    <h1>Before you start</h1>
+    <p>This is a research, education, and quality improvement tool. It is <strong>not a medical
+    device</strong> and does not produce a diagnostic report. A qualified neonatologist, pediatric
+    radiologist, or neuroradiologist must review the complete examination.</p>
+    <p>Your clips never leave this computer. Files are read directly by your browser and nothing is
+    uploaded anywhere. Use de-identified media regardless.</p>
+    <p class="fineprint">Grading follows Mohammad K, Scott JN, Leijser LM, et al. Front Pediatr.
+    2021;9:618236.</p>
+    <button id="gate-accept" class="primary">I understand, open the tool</button>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="topbar">
+    <div>
+      <span class="brand">CUS AI Reader</span>
+      <span class="tag">consensus grading · runs entirely in your browser</span>
+    </div>
+    <div class="topbar-actions">
+      <button id="btn-reset" class="ghost">Clear study</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ============ VIEWER ============ -->
+    <section class="panel viewer">
+      <h2>1 · Images</h2>
+      <p class="hint">Load the coronal and sagittal sweeps for this study. Nothing is uploaded.</p>
+      <input type="file" id="files" multiple accept="video/*,image/*,.avi,.mp4,.mov,.mkv,.png,.jpg,.jpeg,.bmp,.tif,.tiff" />
+      <div id="filelist" class="filelist"></div>
+
+      <div id="stage" class="stage empty">
+        <p class="stage-empty">No file loaded</p>
+        <video id="video" hidden playsinline></video>
+        <img id="still" hidden alt="" />
+      </div>
+
+      <div id="controls" class="controls" hidden>
+        <div class="transport">
+          <button id="prev" class="ghost" title="Previous frame">◀</button>
+          <button id="play" class="ghost">Play</button>
+          <button id="next" class="ghost" title="Next frame">▶</button>
+          <span id="timecode" class="timecode">–</span>
+        </div>
+        <input type="range" id="scrub" min="0" max="1000" value="0" />
+        <div class="viewtools">
+          <label>Brightness <input type="range" id="bright" min="50" max="200" value="100"></label>
+          <label>Contrast <input type="range" id="contrast" min="50" max="250" value="100"></label>
+          <button id="resetview" class="ghost small">Reset</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ GRADING ============ -->
+    <section class="panel grading">
+      <h2>2 · Record what you see</h2>
+      <p class="hint">Answer only what the images actually show. Leave anything you cannot establish
+      as <em>not assessed</em>; the rules treat an unknown as an unknown, never as a negative.</p>
+
+      <fieldset>
+        <legend>Study</legend>
+        <div class="grid2">
+          <label>Study code <input type="text" id="study_code" placeholder="e.g. Case 6 day 14"></label>
+          <label>Reader code <input type="text" id="reader_code" placeholder="initials"></label>
+          <label>Postnatal age, days <input type="number" id="age_days" min="0" step="1" placeholder="e.g. 14"></label>
+          <label>Gestational age, weeks <input type="number" id="ga_weeks" min="20" max="45" step="0.1" placeholder="optional"></label>
+        </div>
+        <div class="checkrow">
+          <label><input type="checkbox" id="serial"> A serial study is available for comparison</label>
+          <label><input type="checkbox" id="cov_cor"> Complete coronal sweep</label>
+          <label><input type="checkbox" id="cov_sag"> Complete sagittal sweep</label>
+          <label><input type="checkbox" id="cov_pf"> Posterior fossa, mastoid window</label>
+          <label><input type="checkbox" id="allframes" checked> Reviewed the whole sweep</label>
+        </div>
+      </fieldset>
+
+      <div class="sides">
+        <fieldset class="side" data-side="left">
+          <legend>Left hemisphere</legend>
+          <div class="steps"></div>
+        </fieldset>
+        <fieldset class="side" data-side="right">
+          <legend>Right hemisphere</legend>
+          <div class="steps"></div>
+        </fieldset>
+      </div>
+
+      <fieldset>
+        <legend>Study-level findings</legend>
+        <label class="block">Ischemic white matter injury
+          <select id="wmi">
+            <option value="not_assessed">Not assessed</option>
+            <option value="none">No ischemic WMI pattern</option>
+            <option value="pve_under_7_days">PVE present, under 7 days or duration not established</option>
+            <option value="grade_1">Grade 1: PVE persisting 7 days or longer, no cysts</option>
+            <option value="grade_2">Grade 2: small localized frontoparietal cysts</option>
+            <option value="grade_3">Grade 3: extensive fronto-parieto-occipital periventricular cysts</option>
+            <option value="grade_4">Grade 4: extensive deep or subcortical white matter cysts</option>
+          </select>
+        </label>
+        <label class="block">Cerebellar hemorrhage
+          <select id="cbh">
+            <option value="not_assessed">Not assessed</option>
+            <option value="none">None</option>
+            <option value="punctate">Punctate, 4 mm or smaller</option>
+            <option value="limited">Limited, above 4 mm and below one third of a hemisphere</option>
+            <option value="large">Large, one third or more of a hemisphere</option>
+          </select>
+        </label>
+        <div class="grid2">
+          <label>Preceding GMH-IVH
+            <select id="prior"><option value="auto">Derive from the hemispheres</option>
+            <option value="yes">Yes</option><option value="no">No</option><option value="unknown">Unknown</option></select>
+          </label>
+          <label>VI above the 97th centile
+            <select id="vi97"><option value="unknown">Not assessed</option><option value="yes">Yes</option><option value="no">No</option></select>
+          </label>
+          <label>VI above the 97th centile plus 4 mm
+            <select id="vi97p4"><option value="unknown">Not assessed</option><option value="yes">Yes</option><option value="no">No</option></select>
+          </label>
+        </div>
+        <p class="fineprint">VI and AHW are measured in the coronal plane at the level of the foramen
+        of Monro. PHVD is graded on the larger ventricle, after the first week of age.</p>
+      </fieldset>
+    </section>
+
+    <!-- ============ RESULT ============ -->
+    <section class="panel result">
+      <h2>3 · Consensus classification</h2>
+      <div id="verdict"></div>
+      <div class="exports">
+        <button id="ex-json" class="ghost">Download JSON</button>
+        <button id="ex-csv" class="ghost">Download CSV</button>
+        <button id="ex-md" class="ghost">Download report</button>
+        <button id="ex-print" class="ghost">Print</button>
+      </div>
+      <p class="fineprint">Research and quality improvement prototype. Not a diagnostic report.
+      Mohammad K, Scott JN, Leijser LM, et al. Consensus Approach for Standardizing the Screening and
+      Classification of Preterm Brain Injury Diagnosed With Cranial Ultrasound: A Canadian
+      Perspective. Front Pediatr. 2021;9:618236. doi:10.3389/fped.2021.618236</p>
+    </section>
+  </main>
+</div>
+
+<script>
+/*
+ * Canadian consensus rule engine, browser port.
+ *
+ * A faithful translation of cus_ai/clinical.py. Any change here must be made in
+ * both places and checked with tools/parity_check.py, which runs the same test
+ * vectors through the Python engine and this one and requires identical output.
+ *
+ * Source: Mohammad K, Scott JN, Leijser LM, et al. Consensus Approach for
+ * Standardizing the Screening and Classification of Preterm Brain Injury
+ * Diagnosed With Cranial Ultrasound: A Canadian Perspective.
+ * Front Pediatr. 2021;9:618236. doi:10.3389/fped.2021.618236
+ */
+
+const GRADE_SEVERITY = {
+  "Grade I GMH-IVH": 1,
+  "Grade II GMH-IVH": 2,
+  "Grade III GMH-IVH": 3,
+};
+
+const PHVD_EARLIEST_DAY = 7;
+
+function classifyCysticSequela(value) {
+  return ({
+    none: "No porencephalic cyst recorded",
+    porencephalic: "Porencephalic cyst, consistent with evolved PVHI",
+    multiple_evolved_pvhi: "Multiple unilateral cysts, consistent with evolved PVHI",
+    not_assessed: "Not assessed",
+  })[value] || "Indeterminate cystic sequela";
+}
+
+// Echodensity is defined against the choroid plexus. Echogenicity that is
+// explicitly not brighter than choroid is physiologic, most often a peritrigonal
+// blush or a symmetric frontal echodensity, and must not be graded as injury.
+function abnormalEchogenicity(e) {
+  if (e.adjacent_periventricular_echogenicity === "no") return "no";
+  if (e.adjacent_periventricular_echogenicity === "unknown") return "unknown";
+  if (e.echogenicity_brighter_than_choroid === "no") return "physiologic";
+  return "yes";
+}
+
+function classifySide(e) {
+  const reasoning = [];
+  const warnings = [];
+  const cystic_sequela = classifyCysticSequela(e.cystic_change);
+  const evolved = e.cystic_change === "porencephalic" || e.cystic_change === "multiple_evolved_pvhi";
+  const echo = abnormalEchogenicity(e);
+
+  if (echo === "physiologic") {
+    warnings.push(
+      "Periventricular echogenicity does not exceed choroid plexus brightness and is recorded as physiologic."
+    );
   }
-  @media (prefers-color-scheme:dark){
-    :root:not([data-theme="light"]){
-      --bg:#16150f; --panel:#1f1e18; --ink:#eceae2; --muted:#a19c90;
-      --line:#332f26; --line-soft:#2a2720;
-      --accent:#d98b73; --accent-soft:#2c211c;
-      --good:#7ec49c; --good-soft:#1c2822;
-      --bad:#e08d7c; --warn:#d4b463; --warn-soft:#2a2417;
+
+  if (e.hemorrhage_present === "unknown") {
+    const r = ["Hemorrhage presence was not established."];
+    if (evolved) r.push("A cystic lesion was recorded as the ipsilateral evolution of previous PVHI.");
+    return {
+      side: e.side,
+      gmh_ivh: "Indeterminate",
+      pvhi: evolved ? "Evolved PVHI with porencephalic cyst" : "Indeterminate",
+      cystic_sequela,
+      evidence_complete: false,
+      reasoning: r,
+      warnings: ["Review both coronal and parasagittal planes before classification."],
+    };
+  }
+
+  // Step 1 answered NO: negative for GMH-IVH, straight to Step 4.
+  if (e.hemorrhage_present === "no") {
+    reasoning.push(
+      "No hemorrhage was recorded in or around the germinal matrix or within the lateral, third, or fourth ventricle."
+    );
+    let pvhi;
+    if (evolved) {
+      pvhi = "Evolved PVHI with porencephalic cyst";
+      reasoning.push("The porencephalic cyst records the serial evolution of previous ipsilateral PVHI.");
+    } else if (echo === "yes") {
+      pvhi = "No PVHI: significant ischemic injury without GMH-IVH";
+      reasoning.push(
+        "Focal periventricular echogenicity without ipsilateral GMH-IVH is reported as significant ischemic injury at Step 4."
+      );
+      if (e.echogenicity_brighter_than_choroid !== "yes") {
+        warnings.push(
+          "Confirm that the echogenicity exceeds choroid plexus brightness and follow its serial evolution."
+        );
+      }
+    } else if (echo === "no" || echo === "physiologic") {
+      pvhi = "Not present";
+    } else {
+      pvhi = "Indeterminate";
+    }
+    return {
+      side: e.side,
+      gmh_ivh: "Negative for GMH-IVH",
+      pvhi,
+      cystic_sequela,
+      evidence_complete: evolved || echo !== "unknown",
+      reasoning,
+      warnings,
+    };
+  }
+
+  // Step 1 answered YES.
+  reasoning.push("Hemorrhage is present in or around the germinal matrix or within the ventricular system.");
+  let grade = "Indeterminate GMH-IVH grade";
+  let complete = false;
+  const ahw = e.ahw_mm === null || e.ahw_mm === undefined || e.ahw_mm === "" ? null : Number(e.ahw_mm);
+
+  if (e.confined_to_germinal_matrix === "yes") {
+    if (e.intraventricular_blood === "yes") {
+      warnings.push("Confined germinal matrix hemorrhage conflicts with recorded intraventricular blood.");
+    } else if (e.intraventricular_blood === "no") {
+      grade = "Grade I GMH-IVH";
+      complete = true;
+      reasoning.push(
+        "Hemorrhage is confined to the germinal matrix with no blood in the lateral ventricle or on the choroid plexus."
+      );
+    } else {
+      warnings.push("Intraventricular blood was not assessed.");
+    }
+  } else if (e.confined_to_germinal_matrix === "no" || e.intraventricular_blood === "yes") {
+    if (e.intraventricular_blood === "no") {
+      grade = "Hemorrhage outside the GMH-IVH axis";
+      complete = true;
+      reasoning.push(
+        "Hemorrhage was recorded as neither confined to the germinal matrix nor within the ventricular system, so the four-step GMH-IVH grades do not apply."
+      );
+      warnings.push("Confirm the location of the hemorrhage. Consider cerebellar, subdural, or parenchymal sources.");
+    } else if (e.intraventricular_blood !== "yes") {
+      warnings.push("Extension into the ventricular system was not explicitly confirmed.");
+    } else if (
+      e.ventricular_distension === "yes" &&
+      ((ahw !== null && ahw > 6) || (ahw === null && e.ahw_above_6_mm === "yes"))
+    ) {
+      grade = "Grade III GMH-IVH";
+      complete = true;
+      reasoning.push(
+        ahw !== null
+          ? `Intraventricular blood acutely distends the ipsilateral ventricle and AHW is ${ahw.toFixed(1)} mm, above 6 mm.`
+          : "Intraventricular blood acutely distends the ipsilateral ventricle and the recorded AHW threshold is above 6 mm."
+      );
+    } else if (e.ventricular_distension === "unknown" || (ahw === null && e.ahw_above_6_mm === "unknown")) {
+      warnings.push(
+        "Grade II versus III requires acute ventricular distension and an AHW measurement in the coronal plane at the foramen of Monro."
+      );
+    } else {
+      grade = "Grade II GMH-IVH";
+      complete = true;
+      reasoning.push(
+        "Intraventricular blood is present without both grade III criteria. Clot characteristically fills less than half the lateral ventricle."
+      );
+      if (e.ventricular_distension === "yes" && ahw !== null && ahw <= 6) {
+        warnings.push("Distension is recorded, but AHW is not above 6 mm. Step 3 maps this to grade II.");
+      }
+    }
+  } else {
+    warnings.push("Hemorrhage location was not established.");
+  }
+
+  // Step 4 for a side positive at Step 1.
+  let pvhi;
+  if (echo === "yes") {
+    pvhi = evolved ? "PVHI with porencephalic cyst" : "Present";
+    reasoning.push(
+      "Ipsilateral focal periventricular echogenicity accompanies GMH-IVH, meeting the Step 4 rule for PVHI."
+    );
+    if (e.echogenicity_brighter_than_choroid !== "yes") {
+      warnings.push("Confirm that the echogenicity exceeds choroid plexus brightness before recording PVHI.");
+    }
+  } else if (evolved) {
+    pvhi = "Evolved PVHI with porencephalic cyst";
+    reasoning.push("The cystic lesion records the serial evolution of previous ipsilateral PVHI.");
+  } else if (echo === "no" || echo === "physiologic") {
+    pvhi = "Not present";
+  } else {
+    pvhi = "Indeterminate";
+    complete = false;
+    warnings.push("PVHI cannot be excluded until adjacent periventricular white matter is assessed.");
+  }
+
+  if (!e.clinician_verified) warnings.push("Evidence has not been verified by a qualified clinician.");
+
+  return { side: e.side, gmh_ivh: grade, pvhi, cystic_sequela, evidence_complete: complete, reasoning, warnings };
+}
+
+// Step 4 is asked of the side of the GMH-IVH, or in bilateral disease of the side
+// with the largest GMH-IVH. Bilateral echogenicity brighter than choroid, present
+// with no blood or with only a small germinal matrix hemorrhage, is more likely
+// primary ischemic injury than PVHI.
+function applyBilateralStepFour(e, left, right) {
+  const leftAbnormal = abnormalEchogenicity(e.left) === "yes";
+  const rightAbnormal = abnormalEchogenicity(e.right) === "yes";
+  if (!(leftAbnormal && rightAbnormal)) return;
+
+  const lg = GRADE_SEVERITY[left.gmh_ivh] || 0;
+  const rg = GRADE_SEVERITY[right.gmh_ivh] || 0;
+  if (Math.max(lg, rg) === 0) return;
+
+  if (Math.max(lg, rg) <= 1) {
+    const note =
+      "Bilateral periventricular echogenicity coexisting with only small germinal matrix hemorrhage favours primary ischemic white matter injury over PVHI. Serial imaging is required to separate the two.";
+    for (const side of [left, right]) {
+      if (side.pvhi === "Present") {
+        side.pvhi = "Indeterminate: bilateral pattern favours ischemic white matter injury";
+        side.warnings.push(note);
+        side.evidence_complete = false;
+      }
+    }
+    return;
+  }
+
+  if (lg !== rg) {
+    const smaller = lg < rg ? left : right;
+    const larger = lg < rg ? right : left;
+    if (smaller.pvhi === "Present") {
+      smaller.warnings.push(
+        `Step 4 anchors to the larger ${larger.side} GMH-IVH. Confirm that the ${smaller.side} echogenicity is fan-shaped and asymmetric before recording a second PVHI rather than coexisting ischemic injury.`
+      );
     }
   }
-  :root[data-theme="dark"]{
-    --bg:#16150f; --panel:#1f1e18; --ink:#eceae2; --muted:#a19c90;
-    --line:#332f26; --line-soft:#2a2720;
-    --accent:#d98b73; --accent-soft:#2c211c;
-    --good:#7ec49c; --good-soft:#1c2822;
-    --bad:#e08d7c; --warn:#d4b463; --warn-soft:#2a2417;
-  }
+}
 
-  *{box-sizing:border-box}
-  body{
-    margin:0; background:var(--bg); color:var(--ink);
-    font-family:var(--sans); font-size:16px; line-height:1.6;
-    -webkit-font-smoothing:antialiased;
-  }
-  .wrap{max-width:920px; margin:0 auto; padding:0 24px 96px}
+function classifyWmi(e) {
+  return ({
+    none: "No ischemic WMI pattern recorded",
+    pve_under_7_days: "PVE present, duration below 7 days or not yet established",
+    grade_1: "Grade 1 WMI: PVE persisting for 7 days or longer without cystic evolution",
+    grade_2: "Grade 2 WMI: PVE evolving into small localized frontoparietal cysts",
+    grade_3: "Grade 3 WMI: PVE evolving into extensive fronto-parieto-occipital periventricular cysts",
+    grade_4: "Grade 4 WMI: PVE evolving into extensive deep or subcortical white matter cysts",
+    not_assessed: "Not assessed",
+  })[e.wmi_pattern] || "Indeterminate WMI pattern";
+}
 
-  header{padding:64px 0 40px; border-bottom:1px solid var(--line)}
-  .eyebrow{
-    font-family:var(--mono); font-size:11px; letter-spacing:.14em;
-    text-transform:uppercase; color:var(--accent); margin:0 0 18px;
-  }
-  h1{
-    font-family:var(--serif); font-weight:600; font-size:clamp(2rem,5vw,3rem);
-    line-height:1.12; margin:0 0 16px; letter-spacing:-.015em;
-  }
-  .lede{font-size:1.1rem; color:var(--muted); margin:0; max-width:64ch}
+function classifyCbh(value) {
+  return ({
+    none: "No cerebellar hemorrhage recorded",
+    punctate: "Punctate CBH, 4 mm or smaller, usually MRI detected",
+    limited: "Limited CBH, above 4 mm and below one third of a cerebellar hemisphere",
+    large: "Large CBH, one third or more of a cerebellar hemisphere",
+    not_assessed: "Not assessed",
+  })[value] || "Indeterminate cerebellar hemorrhage category";
+}
 
-  h2{
-    font-family:var(--serif); font-size:1.55rem; font-weight:600;
-    margin:56px 0 6px; letter-spacing:-.01em; scroll-margin-top:20px;
+// PHVD is graded on the largest lateral ventricle, after the first week of age.
+// Acute distension from a large hemorrhage in the first days is grade III
+// GMH-IVH, not PHVD, and the consensus separates the two deliberately.
+function classifyPhvd(e) {
+  const values = [e.left.ahw_mm, e.right.ahw_mm]
+    .map((x) => (x === null || x === undefined || x === "" ? null : Number(x)))
+    .filter((x) => x !== null);
+  const maxAhw = values.length ? Math.max(...values) : null;
+  const above6 = [e.left, e.right].some((s) => s.ahw_above_6_mm === "yes");
+  const above10 = [e.left, e.right].some((s) => s.ahw_above_10_mm === "yes");
+
+  if (e.prior_gmh_ivh === "no") {
+    if (e.vi_above_97th === "no" && !above6 && (maxAhw === null || maxAhw <= 6)) {
+      return "No moderate or severe PHVD by recorded thresholds";
+    }
+    return "Not PHVD: no preceding GMH-IVH recorded";
   }
-  h2 + .sub{color:var(--muted); margin:0 0 24px; font-size:.95rem}
-  h3{font-size:1rem; font-weight:650; margin:32px 0 8px}
-  p{margin:0 0 16px}
-  a{color:var(--accent)}
+  if (e.prior_gmh_ivh === "unknown") return "Indeterminate: preceding GMH-IVH status is unknown";
 
-  .panel{
-    background:var(--panel); border:1px solid var(--line);
-    border-radius:10px; padding:24px 26px; margin:20px 0;
+  const age = e.postnatal_age_days;
+  if (age !== null && age !== undefined && age !== "" && Number(age) < PHVD_EARLIEST_DAY) {
+    return "Not gradeable as PHVD before day 7: acute ventricular distension in the first week is graded as GMH-IVH";
   }
-
-  /* defect list */
-  .defect{
-    display:grid; grid-template-columns:auto 1fr; gap:0 18px;
-    padding:20px 0; border-bottom:1px solid var(--line-soft);
+  if (e.vi_above_97th_plus_4mm === "yes" || (maxAhw !== null && maxAhw > 10) || above10) return "Severe PHVD";
+  if (e.vi_above_97th === "yes" && ((maxAhw !== null && maxAhw > 6) || above6)) return "Moderate PHVD";
+  if (e.vi_above_97th === "no" && (maxAhw === null || maxAhw <= 6)) {
+    return "No moderate or severe PHVD by recorded thresholds";
   }
-  .defect:last-child{border-bottom:0; padding-bottom:0}
-  .defect:first-child{padding-top:0}
-  .num{
-    font-family:var(--mono); font-size:11px; color:var(--accent);
-    background:var(--accent-soft); border-radius:5px;
-    width:26px; height:24px; display:grid; place-items:center; margin-top:3px;
+  return "Indeterminate PHVD: complete serial VI and AHW measurements are required";
+}
+
+function classifyStudy(e) {
+  const left = classifySide(e.left);
+  const right = classifySide(e.right);
+  applyBilateralStepFour(e, left, right);
+  const wmi = classifyWmi(e);
+  const cbh = classifyCbh(e.cerebellar_hemorrhage);
+  const phvd = classifyPhvd(e);
+
+  const severe = [];
+  for (const side of [left, right]) {
+    if (
+      side.gmh_ivh === "Grade III GMH-IVH" ||
+      ["Present", "PVHI with porencephalic cyst", "Evolved PVHI with porencephalic cyst"].includes(side.pvhi)
+    ) {
+      severe.push(`${side.side}: ${side.gmh_ivh}, PVHI ${side.pvhi.toLowerCase()}`);
+    }
   }
-  .defect h4{margin:0 0 6px; font-size:1rem; font-weight:650}
-  .defect p{margin:0 0 10px; color:var(--muted); font-size:.94rem}
-  .defect p:last-child{margin-bottom:0}
-  .fix{
-    color:var(--ink); font-size:.9rem; border-left:2px solid var(--good);
-    padding-left:12px; background:var(--good-soft); padding:8px 12px;
-    border-radius:0 5px 5px 0;
+  if (["grade_2", "grade_3", "grade_4"].includes(e.wmi_pattern)) severe.push("cystic white matter injury");
+  // The consensus defines severe injury as including moderate to large CBH.
+  if (e.cerebellar_hemorrhage === "limited") severe.push("moderate cerebellar hemorrhage");
+  if (e.cerebellar_hemorrhage === "large") severe.push("large cerebellar hemorrhage");
+  if (phvd === "Severe PHVD") severe.push("severe ventricular dilatation");
+
+  const limitations = [];
+  if (!e.all_frames_processed) limitations.push("Complete sequential processing of every reported source frame was not confirmed.");
+  if (!e.coronal_views_complete) limitations.push("Complete coronal sweep coverage was not confirmed.");
+  if (!e.sagittal_views_complete) limitations.push("Complete sagittal or parasagittal sweep coverage was not confirmed.");
+  if (!e.posterior_fossa_views_complete)
+    limitations.push(
+      "Posterior fossa assessment through the mastoid window was not confirmed, so cerebellar hemorrhage and fourth ventricular blood may be missed."
+    );
+  if (!e.serial_study_available)
+    limitations.push("No serial study was confirmed. WMI evolution, PVHI cavitation, and PHVD trajectory may be missed.");
+  if (!(e.left.clinician_verified && e.right.clinician_verified))
+    limitations.push("At least one hemisphere has not been clinician verified.");
+  if (e.postnatal_age_days === null || e.postnatal_age_days === undefined || e.postnatal_age_days === "")
+    limitations.push(
+      "Postnatal age was not supplied, so the first-week grading window and the day 7 PHVD boundary could not be applied."
+    );
+
+  const coreComplete =
+    e.all_frames_processed &&
+    e.complete_required_views &&
+    e.left.clinician_verified &&
+    e.right.clinician_verified &&
+    left.evidence_complete &&
+    right.evidence_complete;
+  const serialComplete =
+    e.serial_study_available &&
+    e.wmi_pattern !== "not_assessed" &&
+    e.cerebellar_hemorrhage !== "not_assessed" &&
+    e.prior_gmh_ivh !== "unknown" &&
+    e.vi_above_97th !== "unknown" &&
+    e.vi_above_97th_plus_4mm !== "unknown";
+
+  return {
+    left,
+    right,
+    wmi,
+    cerebellar_hemorrhage: cbh,
+    phvd,
+    classification_status:
+      coreComplete && serialComplete
+        ? "Final consensus classification from complete verified study and serial evidence"
+        : "Provisional consensus classification",
+    view_coverage: {
+      coronal: e.coronal_views_complete,
+      sagittal_or_parasagittal: e.sagittal_views_complete,
+      posterior_fossa: e.posterior_fossa_views_complete,
+    },
+    severe_preterm_brain_injury_flag: severe.length
+      ? "Criteria recorded: " + severe.join("; ")
+      : "No severe-injury criterion established from the recorded evidence",
+    limitations,
+  };
+}
+
+
+
+</script>
+<script>
+/* ---------- guided consensus questions, per hemisphere ---------- */
+const STEP_DEFS = [
+  { key: "hemorrhage_present", step: "Step 1",
+    q: "Is there hemorrhage within or around the germinal matrix, or within the lateral, third, or fourth ventricle?",
+    help: "Recent hemorrhage is echogenic. Check the occipital horns for dependent layering, and remember that CSF posterior to the calcarine fissure holds no choroid plexus.",
+    opts: [["yes","Yes"],["no","No"],["unknown","Not assessed"]] },
+  { key: "confined_to_germinal_matrix", step: "Step 2", dependsOn: ["hemorrhage_present","yes"],
+    q: "Is the hemorrhage confined to the germinal matrix region?",
+    help: "Confined, with no blood in the lateral ventricle or on the choroid plexus, is grade I. Blood in the ventricle takes you to Step 3.",
+    opts: [["yes","Yes, confined"],["no","No, beyond it"],["unknown","Not assessed"]] },
+  { key: "intraventricular_blood", step: "Step 2", dependsOn: ["hemorrhage_present","yes"],
+    q: "Is there blood within the lateral ventricle or on the choroid plexus?",
+    opts: [["yes","Yes"],["no","No"],["unknown","Not assessed"]] },
+  { key: "ventricular_distension", step: "Step 3", dependsOn: ["intraventricular_blood","yes"],
+    q: "Is the IVH acutely distending the ipsilateral lateral ventricle?",
+    help: "Grade III needs distension and AHW above 6 mm together. Clot typically fills half the ventricle or more.",
+    opts: [["yes","Yes"],["no","No"],["unknown","Not assessed"]] },
+  { key: "ahw_mm", step: "Step 3", type: "number", dependsOn: ["intraventricular_blood","yes"],
+    q: "Anterior horn width, mm",
+    help: "Widest diagonal of the anterior horn, coronal plane at the foramen of Monro. Leave blank if not measured." },
+  { key: "adjacent_periventricular_echogenicity", step: "Step 4",
+    q: "Is there focal echogenicity in the periventricular white matter on this side?",
+    help: "With ipsilateral GMH-IVH this is PVHI. Without it, this is reported as significant ischemic injury.",
+    opts: [["yes","Yes"],["no","No"],["unknown","Not assessed"]] },
+  { key: "echogenicity_brighter_than_choroid", step: "Step 4", dependsOn: ["adjacent_periventricular_echogenicity","yes"],
+    q: "Is that echogenicity brighter than the choroid plexus?",
+    help: "The choroid plexus is the reference. Echogenicity that does not exceed it is physiologic, such as a peritrigonal blush or a symmetric frontal echodensity.",
+    opts: [["yes","Yes, brighter"],["no","No, not brighter"],["unknown","Not assessed"]] },
+  { key: "cystic_change", step: "Sequela",
+    q: "Cystic change on this side",
+    help: "A porencephalic cyst in the location of a previous PVHI records its evolution. Multiple small unilateral cysts separate from the ventricle are a variant of the same thing.",
+    opts: [["none","None"],["porencephalic","Porencephalic cyst"],["multiple_evolved_pvhi","Multiple unilateral cysts"],["not_assessed","Not assessed"]] },
+];
+
+const SIDE_DEFAULTS = {
+  hemorrhage_present: "unknown", confined_to_germinal_matrix: "unknown", intraventricular_blood: "unknown",
+  ventricular_distension: "unknown", ahw_mm: null, ahw_above_6_mm: "unknown", ahw_above_10_mm: "unknown",
+  adjacent_periventricular_echogenicity: "no", echogenicity_brighter_than_choroid: "unknown",
+  cystic_change: "none", clinician_verified: true,
+};
+
+const state = { left: { ...SIDE_DEFAULTS, side: "left" }, right: { ...SIDE_DEFAULTS, side: "right" } };
+
+function buildSteps(container, side) {
+  container.innerHTML = "";
+  for (const def of STEP_DEFS) {
+    const wrap = document.createElement("div");
+    wrap.className = "step";
+    wrap.dataset.key = def.key;
+    const label = document.createElement("div");
+    label.className = "step-q";
+    label.innerHTML = `<span class="stepno">${def.step}</span> ${def.q}`;
+    wrap.appendChild(label);
+
+    if (def.type === "number") {
+      const input = document.createElement("input");
+      input.type = "number"; input.step = "0.1"; input.min = "0"; input.placeholder = "mm";
+      input.addEventListener("input", () => {
+        state[side][def.key] = input.value === "" ? null : Number(input.value);
+        render();
+      });
+      wrap.appendChild(input);
+    } else {
+      const row = document.createElement("div");
+      row.className = "opts";
+      for (const [value, text] of def.opts) {
+        const b = document.createElement("button");
+        b.type = "button"; b.textContent = text; b.dataset.value = value;
+        b.className = state[side][def.key] === value ? "opt on" : "opt";
+        b.addEventListener("click", () => {
+          state[side][def.key] = value;
+          // Step 2 is a consequence of Step 1, mirrored from the Python engine.
+          if (def.key === "intraventricular_blood") {
+            if (value === "yes") state[side].confined_to_germinal_matrix = "no";
+            else if (value === "no" && state[side].hemorrhage_present === "yes")
+              state[side].confined_to_germinal_matrix = "yes";
+          }
+          if (def.key === "hemorrhage_present" && value === "no") {
+            state[side].confined_to_germinal_matrix = "no";
+            state[side].intraventricular_blood = "no";
+          }
+          buildSteps(container, side);
+          render();
+        });
+        row.appendChild(b);
+      }
+      wrap.appendChild(row);
+    }
+    if (def.help) {
+      const h = document.createElement("p");
+      h.className = "step-help"; h.textContent = def.help;
+      wrap.appendChild(h);
+    }
+    if (def.dependsOn) {
+      const [dk, dv] = def.dependsOn;
+      if (state[side][dk] !== dv) wrap.classList.add("dimmed");
+    }
+    container.appendChild(wrap);
   }
-  .fix b{font-weight:650; color:var(--good)}
+}
 
-  code{font-family:var(--mono); font-size:.87em; background:var(--line-soft);
-       padding:1px 5px; border-radius:4px}
+/* ---------- assemble the study and classify ---------- */
+function val(id) { const el = document.getElementById(id); return el ? el.value : ""; }
+function checked(id) { const el = document.getElementById(id); return el ? el.checked : false; }
 
-  .scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; margin:18px 0}
-  table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:520px}
-  th,td{text-align:left; padding:9px 14px 9px 0; border-bottom:1px solid var(--line-soft)}
-  th{
-    font-family:var(--mono); font-size:10.5px; letter-spacing:.08em;
-    text-transform:uppercase; color:var(--muted); font-weight:500;
-    border-bottom:1px solid var(--line);
+function currentStudy() {
+  const left = { ...state.left }, right = { ...state.right };
+  for (const s of [left, right]) {
+    const a = s.ahw_mm;
+    s.ahw_above_6_mm = a === null ? "unknown" : a > 6 ? "yes" : "no";
+    s.ahw_above_10_mm = a === null ? "unknown" : a > 10 ? "yes" : "no";
   }
-  td.n{font-family:var(--mono); font-variant-numeric:tabular-nums}
-  .win{color:var(--good); font-weight:600}
-  .lose{color:var(--muted)}
-
-  /* chart */
-  .chart{margin:24px 0 8px}
-  .bar-row{display:grid; grid-template-columns:132px 1fr; gap:14px; align-items:center; margin-bottom:9px}
-  .bar-label{font-family:var(--mono); font-size:11px; color:var(--muted); text-align:right}
-  .bars{display:flex; flex-direction:column; gap:3px}
-  .bar{height:15px; border-radius:3px; display:flex; align-items:center; padding-left:7px;
-       font-family:var(--mono); font-size:10px; color:#fff; min-width:34px}
-  .bar.old{background:#b0a89a}
-  .bar.new{background:var(--good)}
-  .legend{display:flex; gap:20px; font-size:.82rem; color:var(--muted); margin-top:16px; flex-wrap:wrap}
-  .swatch{display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:6px; vertical-align:-1px}
-
-  .callout{
-    background:var(--warn-soft); border:1px solid var(--line);
-    border-left:3px solid var(--warn); border-radius:0 8px 8px 0;
-    padding:18px 22px; margin:28px 0; font-size:.94rem;
+  let prior = val("prior");
+  if (prior === "auto") {
+    const set = new Set([left.hemorrhage_present, right.hemorrhage_present]);
+    prior = set.has("yes") ? "yes" : (left.hemorrhage_present === "no" && right.hemorrhage_present === "no") ? "no" : "unknown";
   }
-  .callout strong{color:var(--warn)}
-  .callout p:last-child{margin-bottom:0}
+  const age = val("age_days");
+  return {
+    study_code: val("study_code"), reader_code: val("reader_code"),
+    postnatal_age_days: age === "" ? null : Number(age),
+    gestational_age_weeks: val("ga_weeks") === "" ? null : Number(val("ga_weeks")),
+    left, right,
+    wmi_pattern: val("wmi"), cerebellar_hemorrhage: val("cbh"), prior_gmh_ivh: prior,
+    vi_above_97th: val("vi97"), vi_above_97th_plus_4mm: val("vi97p4"),
+    coronal_views_complete: checked("cov_cor"), sagittal_views_complete: checked("cov_sag"),
+    posterior_fossa_views_complete: checked("cov_pf"),
+    complete_required_views: checked("cov_cor") && checked("cov_sag") && checked("cov_pf"),
+    all_frames_processed: checked("allframes"), serial_study_available: checked("serial"),
+    sources: loaded.map((f) => ({ name: f.name, type: f.kind })),
+  };
+}
 
-  ol.steps{padding-left:0; list-style:none; counter-reset:s; margin:20px 0}
-  ol.steps li{
-    counter-increment:s; padding:14px 0 14px 42px; position:relative;
-    border-bottom:1px solid var(--line-soft); font-size:.95rem;
-  }
-  ol.steps li:last-child{border-bottom:0}
-  ol.steps li::before{
-    content:counter(s); position:absolute; left:0; top:15px;
-    font-family:var(--mono); font-size:11px; color:var(--accent);
-    background:var(--accent-soft); width:24px; height:22px;
-    display:grid; place-items:center; border-radius:5px;
-  }
-  pre{
-    background:var(--line-soft); border:1px solid var(--line); border-radius:7px;
-    padding:14px 16px; overflow-x:auto; font-family:var(--mono);
-    font-size:.83rem; line-height:1.55; margin:10px 0;
-  }
-  .files{font-family:var(--mono); font-size:.85rem}
-  .files div{padding:7px 0; border-bottom:1px solid var(--line-soft); display:flex;
-             gap:14px; flex-wrap:wrap; align-items:baseline}
-  .files div:last-child{border-bottom:0}
-  .files b{font-weight:600; min-width:220px}
-  .files span{color:var(--muted); font-family:var(--sans); font-size:.88rem}
+function severeClass(flag) { return flag.startsWith("Criteria recorded") ? "flag bad" : "flag ok"; }
 
-  footer{
-    margin-top:64px; padding-top:26px; border-top:1px solid var(--line);
-    font-size:.86rem; color:var(--muted);
-  }
-  @media(max-width:640px){
-    .bar-row{grid-template-columns:1fr}
-    .bar-label{text-align:left}
-    .files b{min-width:0; display:block; width:100%}
-  }
-</style>
+function sideBlock(title, s) {
+  const lines = [];
+  lines.push(`<div class="sideres"><h4>${title}</h4>`);
+  lines.push(`<p class="big">${s.gmh_ivh}</p>`);
+  lines.push(`<p class="kv"><span>PVHI</span> ${s.pvhi}</p>`);
+  lines.push(`<p class="kv"><span>Cystic sequela</span> ${s.cystic_sequela}</p>`);
+  if (s.reasoning.length) lines.push(`<ul class="why">${s.reasoning.map((r) => `<li>${r}</li>`).join("")}</ul>`);
+  if (s.warnings.length) lines.push(`<ul class="warn">${s.warnings.map((r) => `<li>${r}</li>`).join("")}</ul>`);
+  lines.push("</div>");
+  return lines.join("");
+}
 
-<div class="wrap">
+let lastResult = null;
 
-<header>
-  <p class="eyebrow">CUS AI Reader · v0.6.0 · research use only</p>
-  <h1>The scoring path between the model and the grade, rebuilt</h1>
-  <p class="lede">Ten defects sat between the model output and the consensus grade. Two meant the
-  tool could never produce a grade at all, and one meant a real ultrasound sweep would not load.
-  This release fixes the path, adds calibration and anatomic constraints, pins every clinical rule
-  to the 2021 Canadian consensus paper, and lets the tool learn from being corrected.</p>
-</header>
-
-<h2>What was broken</h2>
-<p class="sub">Found by reading the scoring path against the consensus algorithm it claims to implement.</p>
-
-<div class="panel">
-
-  <div class="defect">
-    <div class="num">1</div>
-    <div>
-      <h4>A single bright frame could carry a finding</h4>
-      <p>Frame-to-study pooling took the mean of the three highest frame probabilities.
-      On a 400-frame sweep that is close to a maximum. Three noisy frames declared any
-      finding present, and speckle, the choroid plexus edge, and the caudothalamic notch
-      all produce isolated bright frames.</p>
-      <p class="fix"><b>Fixed.</b> A finding must now persist. The score is the more conservative of
-      the k-th largest probability and the highest level sustained across a run of consecutive
-      frames, and where the anatomy allows it, a second plane must confirm.</p>
+function render() {
+  const study = currentStudy();
+  const c = classifyStudy(study);
+  lastResult = { study, classification: c };
+  const el = document.getElementById("verdict");
+  el.innerHTML = `
+    <div class="${severeClass(c.severe_preterm_brain_injury_flag)}">${c.severe_preterm_brain_injury_flag}</div>
+    <p class="status">${c.classification_status}</p>
+    <div class="two">${sideBlock("Left", c.left)}${sideBlock("Right", c.right)}</div>
+    <div class="studyres">
+      <p class="kv"><span>White matter injury</span> ${c.wmi}</p>
+      <p class="kv"><span>Cerebellar hemorrhage</span> ${c.cerebellar_hemorrhage}</p>
+      <p class="kv"><span>PHVD</span> ${c.phvd}</p>
     </div>
-  </div>
+    ${c.limitations.length ? `<div class="limits"><h4>Limitations of this read</h4><ul>${c.limitations.map((l) => `<li>${l}</li>`).join("")}</ul></div>` : ""}
+  `;
+}
 
-  <div class="defect">
-    <div class="num">2</div>
-    <div>
-      <h4>Step 2 of the algorithm was unanswerable</h4>
-      <p><code>confined_to_germinal_matrix</code> had no label anywhere in the manifest contract,
-      so it resolved to unknown on every study. Step 2 could never be answered, which pinned
-      every AI grade at <em>Indeterminate GMH-IVH grade</em> regardless of the images.</p>
-      <p class="fix"><b>Fixed.</b> Step 2 is derived, exactly as the algorithm derives it: hemorrhage
-      present with no intraventricular blood is confined to the germinal matrix. Grade I and
-      grade III now resolve.</p>
-    </div>
-  </div>
+/* ---------- media ---------- */
+const loaded = [];
+const video = document.getElementById("video");
+const still = document.getElementById("still");
+const stage = document.getElementById("stage");
+const controls = document.getElementById("controls");
+let assumedFps = 24;
 
-  <div class="defect">
-    <div class="num">3</div>
-    <div>
-      <h4>The tool abstained on every study</h4>
-      <p>Abstention was global. Any one uncertain feature set it, and so did the default
-      absence of a serial study. Since that default is off, every study abstained on every
-      domain, including the domains the model had answered confidently.</p>
-      <p class="fix"><b>Fixed.</b> Abstention is scoped per domain. A clean coronal sweep with no
-      mastoid window now reports its hemorrhage grades and withholds cerebellar hemorrhage,
-      with the reason attached. That is what a reader does.</p>
-    </div>
-  </div>
+function showFile(item) {
+  document.querySelectorAll(".filechip").forEach((c) => c.classList.toggle("on", c.dataset.name === item.name));
+  stage.classList.remove("empty");
+  stage.querySelector(".stage-empty").hidden = true;
+  if (item.kind === "video") {
+    still.hidden = true; video.hidden = false;
+    video.src = item.url; controls.hidden = false;
+  } else {
+    video.hidden = true; video.pause?.(); still.hidden = false;
+    still.src = item.url; controls.hidden = true;
+  }
+}
 
-  <div class="defect">
-    <div class="num">4</div>
-    <div>
-      <h4>Alias matching biased every field toward yes</h4>
-      <p>Evidence fields were resolved by taking whichever candidate label scored highest.
-      <code>hemorrhage_present</code> listed <code>intraventricular_blood</code> as an alias, so
-      intraventricular scores could raise hemorrhage presence but never lower it. One-sided
-      error, on every field with more than one alias.</p>
-      <p class="fix"><b>Fixed.</b> Alias lookup is gone. Fields a network can emit are read directly;
-      fields that are logical consequences are derived.</p>
-    </div>
-  </div>
+document.getElementById("files").addEventListener("change", (ev) => {
+  const list = document.getElementById("filelist");
+  for (const file of ev.target.files) {
+    const kind = file.type.startsWith("video") || /\.(avi|mp4|mov|mkv|webm|m4v)$/i.test(file.name) ? "video" : "image";
+    const item = { name: file.name, kind, url: URL.createObjectURL(file) };
+    loaded.push(item);
+    const chip = document.createElement("button");
+    chip.className = "filechip"; chip.dataset.name = file.name;
+    chip.textContent = `${kind === "video" ? "▶" : "▣"} ${file.name}`;
+    chip.addEventListener("click", () => showFile(item));
+    list.appendChild(chip);
+  }
+  if (loaded.length) showFile(loaded[loaded.length - 1]);
+  render();
+});
 
-  <div class="defect">
-    <div class="num">5</div>
-    <div>
-      <h4>PVHI was fed back in as its own input</h4>
-      <p>A label literally named <code>pvhi</code> was accepted as the input for periventricular
-      echogenicity. PVHI is the conclusion Step 4 reaches, so accepting it as an input
-      short-circuited the rule it was meant to feed.</p>
-      <p class="fix"><b>Fixed.</b> Step 4 reads focal periventricular echogenicity only.</p>
-    </div>
-  </div>
+video.addEventListener("loadedmetadata", () => {
+  document.getElementById("scrub").value = 0;
+  updateTimecode();
+});
+video.addEventListener("timeupdate", updateTimecode);
+function updateTimecode() {
+  if (!video.duration || !isFinite(video.duration)) return;
+  const frame = Math.round(video.currentTime * assumedFps);
+  const total = Math.round(video.duration * assumedFps);
+  document.getElementById("timecode").textContent = `frame ${frame} / ~${total}`;
+  document.getElementById("scrub").value = String((video.currentTime / video.duration) * 1000);
+}
+document.getElementById("scrub").addEventListener("input", (e) => {
+  if (video.duration) video.currentTime = (e.target.value / 1000) * video.duration;
+});
+document.getElementById("prev").addEventListener("click", () => { video.pause(); video.currentTime = Math.max(0, video.currentTime - 1 / assumedFps); });
+document.getElementById("next").addEventListener("click", () => { video.pause(); video.currentTime = Math.min(video.duration || 0, video.currentTime + 1 / assumedFps); });
+document.getElementById("play").addEventListener("click", (e) => {
+  if (video.paused) { video.play(); e.target.textContent = "Pause"; }
+  else { video.pause(); e.target.textContent = "Play"; }
+});
+document.addEventListener("keydown", (e) => {
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+  if (e.key === "ArrowLeft") { document.getElementById("prev").click(); e.preventDefault(); }
+  if (e.key === "ArrowRight") { document.getElementById("next").click(); e.preventDefault(); }
+  if (e.key === " ") { document.getElementById("play").click(); e.preventDefault(); }
+});
+function applyFilter() {
+  const f = `brightness(${document.getElementById("bright").value}%) contrast(${document.getElementById("contrast").value}%)`;
+  video.style.filter = f; still.style.filter = f;
+}
+document.getElementById("bright").addEventListener("input", applyFilter);
+document.getElementById("contrast").addEventListener("input", applyFilter);
+document.getElementById("resetview").addEventListener("click", () => {
+  document.getElementById("bright").value = 100; document.getElementById("contrast").value = 100; applyFilter();
+});
 
-  <div class="defect">
-    <div class="num">6</div>
-    <div>
-      <h4>Raw probabilities met fixed thresholds</h4>
-      <p>Multi-task heads are over-confident. A threshold of 0.50 applied to uncalibrated
-      output is not the operating point the number implies, and nothing in the pipeline
-      corrected for it.</p>
-      <p class="fix"><b>Fixed.</b> Platt, isotonic, or temperature calibration carried in the manifest,
-      applied per frame before aggregation. <code>scripts/fit_operating_point.py</code> fits it from
-      your labelled studies and picks thresholds that weight a missed bleed above a second read.</p>
-    </div>
-  </div>
+/* ---------- exports ---------- */
+function download(name, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function stamp() {
+  const code = (lastResult?.study.study_code || "study").replace(/[^A-Za-z0-9_-]+/g, "-");
+  return `${code}-${new Date().toISOString().slice(0, 10)}`;
+}
+function payload() {
+  return {
+    schema_version: "0.6.0",
+    generated_at_utc: new Date().toISOString(),
+    intended_use: "Research and quality improvement prototype only",
+    diagnostic_status: "Not a diagnostic report",
+    consensus_source: {
+      citation: "Mohammad K, Scott JN, Leijser LM, et al. Consensus Approach for Standardizing the Screening and Classification of Preterm Brain Injury Diagnosed With Cranial Ultrasound: A Canadian Perspective. Front Pediatr. 2021;9:618236.",
+      doi: "10.3389/fped.2021.618236",
+    },
+    study_evidence: lastResult.study,
+    classification: lastResult.classification,
+    required_human_review: true,
+  };
+}
+document.getElementById("ex-json").addEventListener("click", () =>
+  download(`${stamp()}.json`, JSON.stringify(payload(), null, 2), "application/json"));
 
-  <div class="defect">
-    <div class="num">7</div>
-    <div>
-      <h4>Impossible outputs were graded as though possible</h4>
-      <p>Nothing linked related heads. The model could report P(AHW&nbsp;&gt;&nbsp;10&nbsp;mm)&nbsp;=&nbsp;0.80
-      alongside P(AHW&nbsp;&gt;&nbsp;6&nbsp;mm)&nbsp;=&nbsp;0.40. Every ventricle wider than 10&nbsp;mm is also
-      wider than 6&nbsp;mm, so that pair cannot happen, and the rules graded the contradiction
-      instead of flagging it.</p>
-      <p class="fix"><b>Fixed.</b> Nested thresholds are made monotone, containment hierarchies enforced,
-      exclusive grade families renormalised. Every repair is logged, because frequent repair is
-      itself a finding about the model.</p>
-    </div>
-  </div>
+document.getElementById("ex-csv").addEventListener("click", () => {
+  const flat = {};
+  (function walk(prefix, value) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      for (const [k, v] of Object.entries(value)) walk(prefix ? `${prefix}.${k}` : k, v);
+    } else flat[prefix] = Array.isArray(value) ? JSON.stringify(value) : value;
+  })("", payload());
+  const keys = Object.keys(flat);
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  download(`${stamp()}.csv`, keys.join(",") + "\n" + keys.map((k) => esc(flat[k])).join(",") + "\n", "text/csv");
+});
 
-  <div class="defect">
-    <div class="num">8</div>
-    <div>
-      <h4>Cerebellar findings were scored from coronal frames</h4>
-      <p>Every label was scored from every accepted frame. Cerebellar hemorrhage probabilities
-      were pooled from coronal frontal-horn frames, where the cerebellum is not in view.</p>
-      <p class="fix"><b>Fixed.</b> Each label family is restricted to the planes that can carry it.
-      Cerebellar labels score from the posterior fossa only; AHW and VI from coronal only.</p>
-    </div>
-  </div>
+document.getElementById("ex-md").addEventListener("click", () => {
+  const { study, classification: c } = lastResult;
+  const L = [];
+  L.push("# CUS AI Reader structured research report", "");
+  L.push(`Study code: ${study.study_code || "Not supplied"}`);
+  L.push(`Reader: ${study.reader_code || "Not supplied"}`);
+  L.push(`Postnatal age: ${study.postnatal_age_days ?? "Not supplied"} days`);
+  L.push(`Generated: ${new Date().toISOString()}`, "");
+  L.push("> Research and quality improvement prototype. This is not a diagnostic report.", "");
+  L.push("## Consensus classification", "");
+  L.push(`- Status: ${c.classification_status}`);
+  L.push(`- Left: ${c.left.gmh_ivh}; PVHI: ${c.left.pvhi}; cystic sequela: ${c.left.cystic_sequela}`);
+  L.push(`- Right: ${c.right.gmh_ivh}; PVHI: ${c.right.pvhi}; cystic sequela: ${c.right.cystic_sequela}`);
+  L.push(`- White matter injury: ${c.wmi}`);
+  L.push(`- Cerebellar hemorrhage: ${c.cerebellar_hemorrhage}`);
+  L.push(`- PHVD: ${c.phvd}`);
+  L.push(`- Severe-injury flag: ${c.severe_preterm_brain_injury_flag}`);
+  L.push("", "## Reasoning", "");
+  for (const [n, s] of [["Left", c.left], ["Right", c.right]]) {
+    L.push(`### ${n}`, "");
+    s.reasoning.forEach((r) => L.push(`- ${r}`));
+    s.warnings.forEach((r) => L.push(`- Caution: ${r}`));
+    L.push("");
+  }
+  L.push("## Limitations", "");
+  (c.limitations.length ? c.limitations : ["No additional limitation recorded."]).forEach((l) => L.push(`- ${l}`));
+  L.push("", "## Source", "",
+    "Mohammad K, Scott JN, Leijser LM, et al. Front Pediatr. 2021;9:618236. doi:10.3389/fped.2021.618236", "");
+  download(`${stamp()}.md`, L.join("\n"), "text/markdown");
+});
 
-</div>
+document.getElementById("ex-print").addEventListener("click", () => window.print());
 
-<h2>Does the aggregation change actually help</h2>
-<p class="sub">A simulation of the pooling step, run at matched sensitivity so the result is not a threshold shift.</p>
+document.getElementById("btn-reset").addEventListener("click", () => {
+  if (!confirm("Clear every recorded finding for this study?")) return;
+  Object.assign(state.left, SIDE_DEFAULTS, { side: "left" });
+  Object.assign(state.right, SIDE_DEFAULTS, { side: "right" });
+  ["study_code", "reader_code", "age_days", "ga_weeks"].forEach((id) => (document.getElementById(id).value = ""));
+  ["serial", "cov_cor", "cov_sag", "cov_pf"].forEach((id) => (document.getElementById(id).checked = false));
+  document.getElementById("allframes").checked = true;
+  document.getElementById("wmi").value = "not_assessed";
+  document.getElementById("cbh").value = "not_assessed";
+  document.getElementById("prior").value = "auto";
+  document.getElementById("vi97").value = "unknown";
+  document.getElementById("vi97p4").value = "unknown";
+  document.querySelectorAll(".side").forEach((f) => buildSteps(f.querySelector(".steps"), f.dataset.side));
+  render();
+});
 
-<p>Pooling is the one part of this that can be tested without labelled images. Sweeps are
-generated with a contiguous lesion run in positive studies, artifact arriving in short bursts
-in both, per-study variation in lesion visibility, and 30 percent of positives carrying a
-subtle lesion. Both rules are then compared at 90 percent sensitivity.</p>
+/* ---------- boot ---------- */
+document.getElementById("gate-accept").addEventListener("click", () => {
+  document.getElementById("gate").hidden = true;
+  document.getElementById("app").hidden = false;
+});
+document.querySelectorAll(".side").forEach((f) => buildSteps(f.querySelector(".steps"), f.dataset.side));
+document.querySelectorAll("#study_code,#reader_code,#age_days,#ga_weeks,#wmi,#cbh,#prior,#vi97,#vi97p4,#serial,#cov_cor,#cov_sag,#cov_pf,#allframes")
+  .forEach((el) => el.addEventListener("input", render));
+render();
 
-<div class="panel">
-  <h3 style="margin-top:0">Specificity at 90 percent sensitivity</h3>
-  <div class="chart">
-
-    <div class="bar-row">
-      <div class="bar-label">artifact 0.002<br>bursts ≤2</div>
-      <div class="bars">
-        <div class="bar old" style="width:72.2%">0.72</div>
-        <div class="bar new" style="width:99.7%">1.00</div>
-      </div>
-    </div>
-    <div class="bar-row">
-      <div class="bar-label">artifact 0.005<br>bursts ≤2</div>
-      <div class="bars">
-        <div class="bar old" style="width:49.1%">0.49</div>
-        <div class="bar new" style="width:98.8%">0.99</div>
-      </div>
-    </div>
-    <div class="bar-row">
-      <div class="bar-label">artifact 0.005<br>bursts ≤3</div>
-      <div class="bars">
-        <div class="bar old" style="width:47.4%">0.47</div>
-        <div class="bar new" style="width:82.1%">0.82</div>
-      </div>
-    </div>
-    <div class="bar-row">
-      <div class="bar-label">artifact 0.01<br>bursts ≤2</div>
-      <div class="bars">
-        <div class="bar old" style="width:34.3%">0.34</div>
-        <div class="bar new" style="width:95.8%">0.96</div>
-      </div>
-    </div>
-    <div class="bar-row">
-      <div class="bar-label">artifact 0.02<br>bursts ≤3</div>
-      <div class="bars">
-        <div class="bar old" style="width:22.3%">0.22</div>
-        <div class="bar new" style="width:32.7%">0.33</div>
-      </div>
-    </div>
-
-  </div>
-  <div class="legend">
-    <span><span class="swatch" style="background:#b0a89a"></span>Legacy top-k mean</span>
-    <span><span class="swatch" style="background:#2f6b4f"></span>Persistence</span>
-    <span>3000 simulated studies per row, 30 percent prevalence</span>
-  </div>
-</div>
-
-<div class="scroll">
-<table>
-  <thead><tr>
-    <th>Artifact rate</th><th>Burst length</th>
-    <th>AUC legacy</th><th>AUC persistence</th>
-    <th>Spec legacy</th><th>Spec persistence</th>
-  </tr></thead>
-  <tbody>
-    <tr><td class="n">0.002</td><td class="n">≤2</td><td class="n lose">0.917</td><td class="n win">0.994</td><td class="n lose">0.722</td><td class="n win">0.997</td></tr>
-    <tr><td class="n">0.002</td><td class="n">≤3</td><td class="n lose">0.886</td><td class="n win">0.971</td><td class="n lose">0.684</td><td class="n win">0.931</td></tr>
-    <tr><td class="n">0.005</td><td class="n">≤2</td><td class="n lose">0.825</td><td class="n win">0.991</td><td class="n lose">0.491</td><td class="n win">0.988</td></tr>
-    <tr><td class="n">0.005</td><td class="n">≤3</td><td class="n lose">0.794</td><td class="n win">0.920</td><td class="n lose">0.474</td><td class="n win">0.821</td></tr>
-    <tr><td class="n">0.010</td><td class="n">≤2</td><td class="n lose">0.724</td><td class="n win">0.984</td><td class="n lose">0.343</td><td class="n win">0.958</td></tr>
-    <tr><td class="n">0.010</td><td class="n">≤3</td><td class="n lose">0.703</td><td class="n win">0.818</td><td class="n lose">0.335</td><td class="n win">0.591</td></tr>
-    <tr><td class="n">0.020</td><td class="n">≤2</td><td class="n lose">0.642</td><td class="n win">0.957</td><td class="n lose">0.249</td><td class="n win">0.912</td></tr>
-    <tr><td class="n">0.020</td><td class="n">≤3</td><td class="n lose">0.616</td><td class="n win">0.712</td><td class="n lose">0.223</td><td class="n win">0.327</td></tr>
-  </tbody>
-</table>
-</div>
-
-<p>Persistence wins on every row. The margin is wide when artifact is isolated and narrow
-when artifact arrives in long bursts, which is the expected behaviour and the reason the
-whole sweep is shown rather than one number.</p>
-
-<div class="callout">
-  <p><strong>What this is not.</strong> This is a simulation of the pooling step. It says nothing
-  about how well any model reads an ultrasound, and it is not a clinical validation. No trained
-  weights ship with this repository. The manifest still reads <code>"validated": false</code> and
-  should keep reading that until a model has been fitted and measured on held-out adjudicated
-  Canadian data.</p>
-</div>
-
-<h3>Calibration, separately</h3>
-<p>On a synthetic over-confident detector, Platt scaling moved log loss from 0.328 to 0.096
-and the Brier score from 0.097 to 0.018, and removed the false positives that a naive 0.50
-threshold produced on the same scores.</p>
-
-<h2>Clinical rules corrected</h2>
-<p class="sub">Read back against Front Pediatr 2021;9:618236 and the HUSDiagnostic decision tree. Each now has a named test.</p>
-
-<div class="scroll">
-<table>
-  <thead><tr><th>Rule</th><th>Was</th><th>Now</th></tr></thead>
-  <tbody>
-    <tr>
-      <td>Echodensity definition</td>
-      <td>Any echogenicity counted</td>
-      <td>Must exceed choroid plexus brightness. Peritrigonal blushes and symmetric frontal echodensities read as physiologic.</td>
-    </tr>
-    <tr>
-      <td>Step 4, negative at Step 1</td>
-      <td>"PVHI requires ipsilateral GMH-IVH"</td>
-      <td>Reported as significant ischemic injury, which is what the paper says to report.</td>
-    </tr>
-    <tr>
-      <td>Bilateral Step 4</td>
-      <td>Not implemented</td>
-      <td>Anchored to the largest GMH-IVH. Bilateral echogenicity with only small germinal matrix hemorrhage favours ischemic injury over bilateral PVHI.</td>
-    </tr>
-    <tr>
-      <td>Step 1 scope</td>
-      <td>Lateral ventricle only</td>
-      <td>Includes third and fourth ventricular blood.</td>
-    </tr>
-    <tr>
-      <td>PHVD timing</td>
-      <td>Graded at any age</td>
-      <td>Graded after day 7. Acute distension in the first week is grade III, not PHVD, which is a separation the consensus makes deliberately.</td>
-    </tr>
-    <tr>
-      <td>Severe injury definition</td>
-      <td>Large CBH only</td>
-      <td>Moderate to large CBH, per the paper.</td>
-    </tr>
-    <tr>
-      <td>Hemorrhage off the axis</td>
-      <td>Fell through ungraded</td>
-      <td>Reported explicitly, with a prompt to consider cerebellar, subdural, or parenchymal sources.</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-
-<h2>What is in the release</h2>
-
-<div class="panel files">
-  <div><b>cus_ai/aggregation.py</b><span>New. Persistence-based frame-to-study scoring, plane scoping, quality weighting.</span></div>
-  <div><b>cus_ai/calibration.py</b><span>New. Platt, isotonic, and temperature calibration from the manifest.</span></div>
-  <div><b>cus_ai/consistency.py</b><span>New. Anatomic constraint repair with a logged audit trail.</span></div>
-  <div><b>cus_ai/evidence_mapping.py</b><span>New. Derived consensus evidence, replacing alias lookup.</span></div>
-  <div><b>cus_ai/evaluation.py</b><span>New. AUC, kappa, quadratic weighted kappa, threshold selection, study-level bootstrap intervals.</span></div>
-  <div><b>cus_ai/ai_consensus.py</b><span>Rewritten. Per-domain abstention with reasons and confidence.</span></div>
-  <div><b>cus_ai/clinical.py</b><span>Corrected against the consensus paper.</span></div>
-  <div><b>cus_ai/model.py</b><span>Calibrate, plane-gate, aggregate, repair, in that order.</span></div>
-  <div><b>scripts/fit_operating_point.py</b><span>Fit calibration and thresholds from your labelled studies.</span></div>
-  <div><b>scripts/benchmark_aggregation.py</b><span>Reproduce the table above.</span></div>
-  <div><b>cus_ai/learning.py</b><span>New. Correction log, incremental refitting, and the promotion gate.</span></div>
-  <div><b>cus_ai/media.py</b><span>Frames held grayscale at a working size, so real sweeps fit in memory.</span></div>
-  <div><b>docs/AI_SCORING_ACCURACY.md</b><span>Full reasoning, defect by defect.</span></div>
-  <div><b>docs/LEARNING_FROM_CORRECTIONS.md</b><span>How the correction loop works and what stops it going wrong.</span></div>
-  <div><b>tests/</b><span>74 tests, up from 29. Every clinical rule pinned to its source.</span></div>
-</div>
-
-<h2>Two more things shipped after the scoring rebuild</h2>
-<p class="sub">Both found by testing against the real pilot clips rather than by reasoning about the code.</p>
-
-<div class="panel">
-  <div class="defect">
-    <div class="num">9</div>
-    <div>
-      <h4>Real sweeps would not load</h4>
-      <p>Every decoded frame was held as full-size RGB. The pilot sweeps are 1024&times;1024 and run
-      from 112 to 2011 frames, so one clip costs between 0.35 and 5.6 GB and a coronal plus sagittal
-      pair is 2 to 5 GB before the app caches a second copy. Across all 43 clips that is 88 GB. It
-      killed the test machine outright on the first real sweep.</p>
-      <p class="fix"><b>Fixed.</b> Frames are stored grayscale with the longest side bounded to 512,
-      which is the form the model and the quality metrics already consumed. Measured on a real
-      530-frame sweep: 1.67 GB becomes 139 MB, decoded in about a second, every frame still processed.</p>
-    </div>
-  </div>
-  <div class="defect">
-    <div class="num">10</div>
-    <div>
-      <h4>The tool could not learn from being corrected</h4>
-      <p>Every correction a reader made was discarded. The shipped thresholds stayed shipped.</p>
-      <p class="fix"><b>Added.</b> The AI proposes a grade, the reader corrects it, and the decision
-      thresholds and calibration are refitted from that site's own reads. Against a deliberately
-      miscalibrated detector, scored on 80 studies never used for fitting, agreement rose from
-      <b>41% to 96%</b> after 60 corrections.</p>
-    </div>
-  </div>
-</div>
-
-<h2>What stops the learning loop making things worse</h2>
-<p class="sub">The obvious implementation of "correct it and it improves" degrades accuracy while its own numbers improve.</p>
-
-<div class="callout">
-  <p><strong>Caught in testing.</strong> The first working version of the learner promoted new
-  parameters on <strong>pure random noise in every single trial.</strong> Given signal-free scores it
-  found the degenerate rule that calls every study positive, which scores well when misses are
-  weighted four times higher than false alarms. It would have looked like learning and pushed the
-  thresholds to extremes.</p>
-</div>
-
-<div class="scroll">
-<table>
-  <thead><tr><th>Risk</th><th>What prevents it</th></tr></thead>
-  <tbody>
-    <tr><td>Fitting and scoring on the same corrections</td>
-        <td>Leave-one-infant-out cross-validation. Studies from one infant are not independent, so whole infants are held out. Every number shown is out of fold.</td></tr>
-    <tr><td>Learning a degenerate rule from noise</td>
-        <td>A candidate must beat the incumbent, beat the best constant predictor, clear an out-of-fold AUC floor, and survive a permutation test against shuffled labels. Noise now promotes in about 1 run in 60.</td></tr>
-    <tr><td>Trading away sensitivity for specificity</td>
-        <td>An absolute floor the clinical lead sets, default 0.95, checked out of fold on at least 12 held-out positives. The 95% lower bound is displayed next to it, always.</td></tr>
-    <tr><td>Learning the reader's anchoring to the AI</td>
-        <td>Only grades recorded blind to the AI are eligible for fitting. Unblinded corrections are kept for audit and excluded from every fit.</td></tr>
-    <tr><td>Silent or unreviewable change</td>
-        <td>Append-only correction log, versioned parameters with rollback, and the shipped manifest is never rewritten.</td></tr>
-  </tbody>
-</table>
-</div>
-
-<p>Thresholds unlock at 8 corrections in the smaller class across at least 3 infants; calibration at
-20. Network weights are never touched, because they need thousands of examples. What the log gives
-you instead is an export button: every correction is a labelled row, and a few hundred of them is
-what makes a model trainable on Canadian consensus targets.</p>
-
-<h2>What comes next</h2>
-<p>This release fixes how model output becomes a grade. It does not train a model, and the
-gap between the two is the whole remaining problem. The order that makes sense:</p>
-
-<ol class="steps">
-  <li>Adjudicate the pilot registry to a second reader. Fifteen single-reader examinations across
-      eight infants is enough for workflow, not for fitting anything.</li>
-  <li>Collect labelled per-frame scores and run <code>fit_operating_point.py</code> to replace the
-      placeholder thresholds with fitted ones.</li>
-  <li>Keep all examinations from one infant inside one partition, and hold an entire site out of
-      training, tuning, and threshold selection.</li>
-  <li>Lock the primary endpoint before analysis. Per-infant sensitivity for severe preterm brain
-      injury, with centre-clustered resampling, is the endpoint the validation protocol already
-      recommends.</li>
-  <li>Only then set <code>"validated": true</code>.</li>
-</ol>
-
-<h2>Read further</h2>
-<div class="panel files">
-  <div><b><a href="https://github.com/nncceducation-cpu/CUS-AI-reader/blob/ai-scoring-v0.6.0/docs/AI_SCORING_ACCURACY.md">AI_SCORING_ACCURACY.md</a></b><span>Every scoring defect, the fix, and the evidence.</span></div>
-  <div><b><a href="https://github.com/nncceducation-cpu/CUS-AI-reader/blob/ai-scoring-v0.6.0/docs/LEARNING_FROM_CORRECTIONS.md">LEARNING_FROM_CORRECTIONS.md</a></b><span>How to use the correction loop, and what guards it.</span></div>
-  <div><b><a href="https://github.com/nncceducation-cpu/CUS-AI-reader/tree/ai-scoring-v0.6.0">The code</a></b><span>Branch ai-scoring-v0.6.0, 74 tests passing.</span></div>
-</div>
-
-<footer>
-  <p>CUS AI Reader v0.6.0 · research, education, and quality improvement only · not a medical
-  device and not a diagnostic report · de-identified media only · a qualified neonatologist,
-  pediatric radiologist, or neuroradiologist must review the complete examination.</p>
-  <p>Consensus source: Mohammad K, Scott JN, Leijser LM, et al. Consensus Approach for
-  Standardizing the Screening and Classification of Preterm Brain Injury Diagnosed With Cranial
-  Ultrasound: A Canadian Perspective. Front Pediatr. 2021;9:618236. doi:10.3389/fped.2021.618236</p>
-</footer>
-
-</div>
+</script>
 </body></html>
