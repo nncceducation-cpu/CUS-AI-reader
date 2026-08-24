@@ -7,10 +7,12 @@ Windows 10 or Windows 11, 64-bit.
 
 Start the app
 -------------
-1. Extract the complete ZIP to a normal folder. Do not run it from inside the ZIP.
-2. Double-click "Start CUS AI Reader.cmd".
-3. Wait for the browser to open at a 127.0.0.1 address.
-4. Accept the research-use notice.
+1. Move the ZIP to C:\ or another short location before extracting it.
+2. Extract the complete ZIP. It creates a short folder named "CUSAI". Do not skip
+   any extraction error and do not run the app from inside the ZIP.
+3. Open the extracted CUSAI folder and double-click "Start CUS AI Reader.cmd".
+4. Wait for the browser to open at a 127.0.0.1 address.
+5. Accept the research-use notice.
 
 No internet connection or separate Python installation is required. Keep the runtime,
 cus_ai, models, and .streamlit folders beside the launcher.
@@ -40,4 +42,7 @@ Clinical boundary
 -----------------
 Research and education use only. This prototype is not a medical device. It must not be
 used for treatment or counselling decisions. No validated diagnostic model weights are
-included. A qualified clinician must review the complete examination and every output.
+included, so automatic image grading is unavailable. A qualified clinician can record
+verified findings and run the Canadian consensus rule engine. The complete examination
+and every output require qualified clinical review.
+
