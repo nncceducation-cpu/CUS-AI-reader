@@ -10,9 +10,10 @@ def build_report(
     evidence: StudyEvidence,
     classification: StudyClassification,
     media_summary: list[dict[str, Any]],
+    model_prediction: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
-        "schema_version": "0.1.0",
+        "schema_version": "0.2.0",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "intended_use": "Research and quality improvement prototype only",
         "diagnostic_status": "Not a diagnostic report",
@@ -27,6 +28,7 @@ def build_report(
         "study_evidence": evidence.to_dict(),
         "classification": classification.to_dict(),
         "media_summary": media_summary,
+        "model_prediction": model_prediction,
         "required_human_review": True,
     }
 
@@ -44,12 +46,16 @@ def report_to_markdown(report: dict[str, Any]) -> str:
         "",
         "## Consensus classification",
         "",
+        f"- Status: {c['classification_status']}",
         f"- Left: {c['left']['gmh_ivh']}; PVHI: {c['left']['pvhi']}",
         f"- Right: {c['right']['gmh_ivh']}; PVHI: {c['right']['pvhi']}",
         f"- White matter injury: {c['wmi']}",
         f"- Cerebellar hemorrhage: {c['cerebellar_hemorrhage']}",
         f"- PHVD: {c['phvd']}",
         f"- Severe-injury flag: {c['severe_preterm_brain_injury_flag']}",
+        f"- Coronal coverage confirmed: {c['view_coverage']['coronal']}",
+        f"- Sagittal or parasagittal coverage confirmed: {c['view_coverage']['sagittal_or_parasagittal']}",
+        f"- Posterior fossa coverage confirmed: {c['view_coverage']['posterior_fossa']}",
         "",
         "## Limitations",
         "",
@@ -67,4 +73,3 @@ def report_to_markdown(report: dict[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
-

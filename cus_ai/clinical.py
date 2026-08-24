@@ -152,12 +152,45 @@ def classify_study(e: StudyEvidence) -> StudyClassification:
         severe_reasons.append("severe PHVD")
 
     limitations: list[str] = []
-    if not e.complete_required_views:
-        limitations.append("Required coronal, parasagittal, and posterior fossa views were not confirmed complete.")
+    if not e.all_frames_processed:
+        limitations.append("Complete sequential processing of every reported source frame was not confirmed.")
+    if not e.coronal_views_complete:
+        limitations.append("Complete coronal sweep coverage was not confirmed.")
+    if not e.sagittal_views_complete:
+        limitations.append("Complete sagittal or parasagittal sweep coverage was not confirmed.")
+    if not e.posterior_fossa_views_complete:
+        limitations.append("Posterior fossa assessment was not confirmed.")
     if not e.serial_study_available:
         limitations.append("No serial study was confirmed. WMI evolution, PVHI cavitation, and PHVD trajectory may be missed.")
     if not (e.left.clinician_verified and e.right.clinician_verified):
         limitations.append("At least one hemisphere has not been clinician verified.")
+    if e.model_plane_counts:
+        if e.model_plane_counts.get("coronal", 0) == 0:
+            limitations.append("The installed model accepted no coronal frame.")
+        if e.model_plane_counts.get("sagittal", 0) == 0:
+            limitations.append("The installed model accepted no sagittal frame.")
+
+    core_complete = (
+        e.all_frames_processed
+        and e.complete_required_views
+        and e.left.clinician_verified
+        and e.right.clinician_verified
+        and left.evidence_complete
+        and right.evidence_complete
+    )
+    serial_domains_complete = (
+        e.serial_study_available
+        and e.wmi_pattern != "not_assessed"
+        and e.cerebellar_hemorrhage != "not_assessed"
+        and e.prior_gmh_ivh != "unknown"
+        and e.vi_above_97th != "unknown"
+        and e.vi_above_97th_plus_4mm != "unknown"
+    )
+    classification_status = (
+        "Final consensus classification from complete verified study and serial evidence"
+        if core_complete and serial_domains_complete
+        else "Provisional consensus classification"
+    )
 
     return StudyClassification(
         left=left,
@@ -165,6 +198,12 @@ def classify_study(e: StudyEvidence) -> StudyClassification:
         wmi=wmi,
         cerebellar_hemorrhage=cbh,
         phvd=phvd,
+        classification_status=classification_status,
+        view_coverage={
+            "coronal": e.coronal_views_complete,
+            "sagittal_or_parasagittal": e.sagittal_views_complete,
+            "posterior_fossa": e.posterior_fossa_views_complete,
+        },
         severe_preterm_brain_injury_flag=(
             "Criteria recorded: " + "; ".join(severe_reasons)
             if severe_reasons
@@ -172,4 +211,3 @@ def classify_study(e: StudyEvidence) -> StudyClassification:
         ),
         limitations=limitations,
     )
-

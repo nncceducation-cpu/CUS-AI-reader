@@ -2,7 +2,7 @@
 
 ## Current prototype
 
-The local Streamlit app processes uploaded bytes in the active process. It does not contain a database and does not intentionally write patient media or reports to disk. Video decoding uses a temporary file that is deleted after sampling. DICOM ingestion exposes only technical metadata in the interface.
+The local Streamlit app processes uploaded bytes in the active process. It does not contain a database and does not intentionally write patient media or reports to disk. Video decoding uses a temporary file that is deleted after every frame has been decoded in sequence. DICOM ingestion exposes only technical metadata in the interface.
 
 This is not proof that an uploaded object is de-identified. Ultrasound images can contain burned-in patient names, medical record numbers, dates, facial profiles, or voice and screen-capture metadata. De-identification must occur before upload.
 
@@ -39,4 +39,3 @@ See:
 
 - [Health Canada pre-market guidance for machine learning-enabled medical devices](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices/application-information/guidance-documents/pre-market-guidance-machine-learning-enabled-medical-devices.html)
 - [Good Machine Learning Practice guiding principles](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices/good-machine-learning-practice-medical-device-development.html)
-

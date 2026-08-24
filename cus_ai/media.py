@@ -54,30 +54,29 @@ def _pil_from_array(array: np.ndarray) -> Image.Image:
     raise ValueError(f"Unsupported pixel array shape: {x.shape}")
 
 
-def _sample_indices(total: int, limit: int) -> list[int]:
-    if total <= limit:
-        return list(range(total))
-    return sorted(set(np.linspace(0, total - 1, limit, dtype=int).tolist()))
-
-
-def _decode_image(name: str, data: bytes, max_frames: int) -> IngestResult:
+def _decode_image(name: str, data: bytes) -> IngestResult:
     image = Image.open(io.BytesIO(data))
-    indexes = set(_sample_indices(getattr(image, "n_frames", 1), max_frames))
+    source_frame_count = int(getattr(image, "n_frames", 1) or 1)
     frames: list[MediaFrame] = []
     for index, frame in enumerate(ImageSequence.Iterator(image)):
-        if index in indexes:
-            frames.append(
-                MediaFrame(
-                    source_name=name,
-                    frame_index=index,
-                    image=ImageOps.exif_transpose(frame).convert("RGB"),
-                    media_type="image",
-                )
+        frames.append(
+            MediaFrame(
+                source_name=name,
+                frame_index=index,
+                image=ImageOps.exif_transpose(frame).convert("RGB"),
+                media_type="image",
+                technical_metadata={"source_frame_count": source_frame_count},
             )
-    return IngestResult(frames=frames)
+        )
+    technical = {
+        "source_frame_count": source_frame_count,
+        "decoded_frame_count": len(frames),
+        "all_frames_processed": len(frames) == source_frame_count,
+    }
+    return IngestResult(frames=frames, technical_metadata=technical)
 
 
-def _decode_dicom(name: str, data: bytes, max_frames: int) -> IngestResult:
+def _decode_dicom(name: str, data: bytes) -> IngestResult:
     try:
         import pydicom
     except ImportError as exc:
@@ -102,12 +101,21 @@ def _decode_dicom(name: str, data: bytes, max_frames: int) -> IngestResult:
     if spacing is None:
         warnings.append("DICOM pixel spacing is absent. Automated metric measurements must remain disabled.")
 
-    if array.ndim in (2, 3) and not (array.ndim == 3 and array.shape[-1] in (3, 4)):
-        arrays = [array] if array.ndim == 2 else [array[i] for i in _sample_indices(array.shape[0], max_frames)]
-    elif array.ndim == 4:
-        arrays = [array[i] for i in _sample_indices(array.shape[0], max_frames)]
+    if array.ndim == 2:
+        arrays = [(0, array)]
+    elif array.ndim == 3 and array.shape[-1] in (3, 4):
+        arrays = [(0, array)]
+    elif array.ndim in (3, 4):
+        arrays = [(index, array[index]) for index in range(array.shape[0])]
     else:
-        arrays = [array]
+        arrays = [(0, array)]
+
+    technical["decoded_frame_count"] = len(arrays)
+    technical["all_frames_processed"] = len(arrays) == technical["number_of_frames"]
+    if not technical["all_frames_processed"]:
+        warnings.append(
+            "Decoded frame count does not match the DICOM NumberOfFrames value. The examination is incomplete."
+        )
 
     frames = [
         MediaFrame(
@@ -118,12 +126,12 @@ def _decode_dicom(name: str, data: bytes, max_frames: int) -> IngestResult:
             pixel_spacing_mm=spacing,
             technical_metadata=technical,
         )
-        for index, frame in enumerate(arrays)
+        for index, frame in arrays
     ]
     return IngestResult(frames=frames, warnings=warnings, technical_metadata=technical)
 
 
-def _decode_video(name: str, data: bytes, max_frames: int) -> IngestResult:
+def _decode_video(name: str, data: bytes) -> IngestResult:
     try:
         import cv2
     except ImportError as exc:
@@ -140,13 +148,12 @@ def _decode_video(name: str, data: bytes, max_frames: int) -> IngestResult:
             raise ValueError("The video container could not be opened.")
         total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = float(capture.get(cv2.CAP_PROP_FPS) or 0)
-        indexes = _sample_indices(max(total, 1), max_frames)
         frames: list[MediaFrame] = []
-        for output_index, source_index in enumerate(indexes):
-            capture.set(cv2.CAP_PROP_POS_FRAMES, source_index)
+        source_index = 0
+        while True:
             ok, frame = capture.read()
             if not ok:
-                continue
+                break
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frames.append(
                 MediaFrame(
@@ -157,28 +164,41 @@ def _decode_video(name: str, data: bytes, max_frames: int) -> IngestResult:
                     technical_metadata={"fps": fps, "source_frame_count": total},
                 )
             )
+            source_index += 1
         capture.release()
         if not frames:
             raise ValueError("No readable frames were found in the clip.")
+        complete = total <= 0 or len(frames) == total
+        warnings = []
+        if not complete:
+            warnings.append(
+                f"The container reports {total} frames, but only {len(frames)} frames decoded before the stream ended."
+            )
         return IngestResult(
             frames=frames,
-            technical_metadata={"fps": fps, "source_frame_count": total, "sampled_frame_count": len(frames)},
+            warnings=warnings,
+            technical_metadata={
+                "fps": fps,
+                "source_frame_count": total,
+                "decoded_frame_count": len(frames),
+                "all_frames_processed": complete,
+            },
         )
     finally:
         if path is not None:
             path.unlink(missing_ok=True)
 
 
-def decode_media(name: str, data: bytes, max_frames: int = 24) -> IngestResult:
+def decode_media(name: str, data: bytes) -> IngestResult:
     if not data:
         raise ValueError("The uploaded file is empty.")
     suffix = Path(name).suffix.lower()
     if suffix in IMAGE_SUFFIXES:
-        return _decode_image(name, data, max_frames)
+        return _decode_image(name, data)
     if suffix in VIDEO_SUFFIXES:
-        return _decode_video(name, data, max_frames)
+        return _decode_video(name, data)
     if suffix in DICOM_SUFFIXES:
-        return _decode_dicom(name, data, max_frames)
+        return _decode_dicom(name, data)
     raise ValueError(f"Unsupported file type: {suffix or 'no extension'}")
 
 
@@ -207,4 +227,3 @@ def quality_metrics(image: Image.Image) -> dict[str, float | int | str]:
         "clipped_fraction": round(clipping, 4),
         "quality_flag": quality,
     }
-

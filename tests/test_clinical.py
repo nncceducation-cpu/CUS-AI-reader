@@ -83,3 +83,25 @@ def test_wmi_and_phvd_thresholds_are_serial_domains():
     assert result.wmi.startswith("Grade 3 WMI")
     assert result.phvd == "Severe PHVD"
 
+
+def test_final_status_requires_verified_planes_and_serial_domains():
+    evidence = StudyEvidence(
+        study_code="G",
+        left=side(confined_to_germinal_matrix="yes", intraventricular_blood="no"),
+        right=blank_right(),
+        wmi_pattern="none",
+        cerebellar_hemorrhage="none",
+        prior_gmh_ivh="yes",
+        vi_above_97th="no",
+        vi_above_97th_plus_4mm="no",
+        coronal_views_complete=True,
+        sagittal_views_complete=True,
+        posterior_fossa_views_complete=True,
+        complete_required_views=True,
+        all_frames_processed=True,
+        decoded_frame_count=12,
+        serial_study_available=True,
+    )
+    result = classify_study(evidence)
+    assert result.classification_status.startswith("Final consensus classification")
+    assert result.view_coverage["coronal"] is True

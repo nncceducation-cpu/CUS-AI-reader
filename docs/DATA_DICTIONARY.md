@@ -25,7 +25,9 @@
 | quality_reason | multilabel | blur, low contrast, depth, gain, crop, artifact, missing anatomy, compression, unknown laterality |
 | pixel_spacing_mm | pair numeric | row and column spacing in mm per pixel |
 | frame_index | integer | position in source object or clip |
-| source_frame_count | integer | total frames before sampling |
+| source_frame_count | integer | total frames reported by the source container |
+| decoded_frame_count | integer | number of frames decoded sequentially to the end of the source |
+| all_frames_processed | boolean | whether decoded and reported frame counts agree, or the stream had no reliable count and reached its end |
 
 ## Imaging features by hemisphere
 
@@ -67,6 +69,7 @@ Every inference record must include:
 - input file hash without storing the source file in the exported report
 - plane and quality probabilities
 - feature probabilities by frame, plane, and hemisphere
+- the processing result for every decoded frame, including ambiguous plane assignments
 - calibration version and locked thresholds
 - abstention status and reasons
 - clinician acceptance or correction for every suggested feature
@@ -75,4 +78,3 @@ Every inference record must include:
 ## Annotation quality control
 
 Use explicit `unknown` rather than converting missing evidence to `no`. Store the two initial reader labels, adjudicated label, reader role, and review timestamp. For masks and calipers, store each reader's annotation and the adjudicated result. Calculate agreement before adjudication.
-

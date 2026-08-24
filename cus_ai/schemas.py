@@ -36,10 +36,17 @@ class StudyEvidence:
     prior_gmh_ivh: Answer = "unknown"
     vi_above_97th: Answer = "unknown"
     vi_above_97th_plus_4mm: Answer = "unknown"
+    coronal_views_complete: bool = False
+    sagittal_views_complete: bool = False
+    posterior_fossa_views_complete: bool = False
     complete_required_views: bool = False
+    all_frames_processed: bool = False
+    decoded_frame_count: int = 0
     serial_study_available: bool = False
     model_id: str | None = None
     model_version: str | None = None
+    model_processed_frame_count: int | None = None
+    model_plane_counts: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -65,9 +72,10 @@ class StudyClassification:
     wmi: str
     cerebellar_hemorrhage: str
     phvd: str
+    classification_status: str
+    view_coverage: dict[str, bool]
     severe_preterm_brain_injury_flag: str
     limitations: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

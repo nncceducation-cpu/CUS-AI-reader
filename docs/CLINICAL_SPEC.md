@@ -10,6 +10,8 @@ Classify left and right cerebral hemispheres independently. Do not collapse bila
 
 A complete examination requires multiple coronal and sagittal or parasagittal anterior-fontanel views plus posterior fossa assessment through the mastoid window. Posterior fontanel views can help distinguish occipital horn blood from artifact. A finding seen in only one plane should be treated cautiously.
 
+For cine input, every decodable frame must be evaluated. A display preview can show fewer frames, but it cannot determine which frames enter plane detection or lesion aggregation. Coronal and sagittal or parasagittal coverage are recorded separately and require clinician confirmation before a whole-study classification can be marked final.
+
 The image showing the greatest GMH-IVH severity in the first postnatal week is used for initial grading. Serial imaging is needed for WMI evolution, PVHI cavitation, and PHVD trajectory.
 
 ## GMH-IVH and PVHI rules
@@ -101,4 +103,3 @@ The current software uses a conservative flag for Grade III GMH-IVH, PVHI, sever
 ## Source
 
 Mohammad K, Scott JN, Leijser LM, et al. Front Pediatr. 2021;9:618236. [doi:10.3389/fped.2021.618236](https://doi.org/10.3389/fped.2021.618236).
-

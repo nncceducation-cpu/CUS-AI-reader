@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 import streamlit as st
@@ -12,7 +13,7 @@ from cus_ai.reporting import build_report, report_to_markdown
 from cus_ai.schemas import SideEvidence, StudyEvidence
 
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 ROOT = Path(__file__).parent
 MODEL_DIR = ROOT / "models"
 
@@ -40,9 +41,18 @@ st.markdown(
 )
 
 
-@st.cache_data(show_spinner=False)
-def cached_decode(name: str, payload: bytes, max_frames: int):
-    return decode_media(name, payload, max_frames=max_frames)
+@st.cache_data(show_spinner=False, max_entries=2)
+def cached_decode(name: str, payload: bytes):
+    return decode_media(name, payload)
+
+
+def preview_indices(total: int, limit: int) -> list[int]:
+    """Select display thumbnails only. Processing always uses every decoded frame."""
+    if total <= limit:
+        return list(range(total))
+    if limit == 1:
+        return [0]
+    return sorted({round(index * (total - 1) / (limit - 1)) for index in range(limit)})
 
 
 def answer_select(label: str, key: str, help_text: str | None = None) -> str:
@@ -128,7 +138,8 @@ def render_media_tab() -> tuple[list[MediaFrame], list[dict], list[str]]:
         "Upload one image, an image set, a DICOM object, or a cine clip. Processing stays in this app session. "
         "Use de-identified source files only."
     )
-    max_frames = st.slider("Maximum sampled frames per multi-frame file or clip", 6, 48, 24, 6)
+    st.success("Every decodable frame is processed in sequence. The preview limit below affects display only.")
+    preview_limit = st.slider("Maximum frame thumbnails shown", 8, 64, 24, 8)
     uploads = st.file_uploader(
         "Cranial ultrasound media",
         type=["png", "jpg", "jpeg", "bmp", "tif", "tiff", "gif", "dcm", "dicom", "mp4", "mov", "avi", "mkv", "webm", "m4v"],
@@ -137,20 +148,33 @@ def render_media_tab() -> tuple[list[MediaFrame], list[dict], list[str]]:
     all_frames: list[MediaFrame] = []
     warnings: list[str] = []
     media_summary: list[dict] = []
+    study_hasher = hashlib.sha256()
     for upload in uploads or []:
         try:
-            result = cached_decode(upload.name, upload.getvalue(), max_frames)
+            payload = upload.getvalue()
+            study_hasher.update(upload.name.encode("utf-8"))
+            study_hasher.update(payload)
+            result = cached_decode(upload.name, payload)
             all_frames.extend(result.frames)
             warnings.extend(f"{upload.name}: {item}" for item in result.warnings)
             media_summary.append(
                 {
                     "name": upload.name,
                     "frames_loaded": len(result.frames),
+                    "source_frame_count": result.technical_metadata.get("source_frame_count", len(result.frames)),
+                    "all_frames_processed": result.technical_metadata.get("all_frames_processed", True),
                     "technical_metadata": result.technical_metadata,
                 }
             )
         except Exception as exc:  # user-facing boundary
             warnings.append(f"{upload.name}: {exc}")
+
+    media_fingerprint = study_hasher.hexdigest() if uploads else None
+    if st.session_state.get("media_fingerprint") != media_fingerprint:
+        st.session_state.media_fingerprint = media_fingerprint
+        st.session_state.pop("model_prediction", None)
+        st.session_state.pop("study_evidence", None)
+        st.session_state.pop("study_classification", None)
 
     if warnings:
         for warning in warnings:
@@ -172,34 +196,42 @@ def render_media_tab() -> tuple[list[MediaFrame], list[dict], list[str]]:
                 "pixel spacing": frame.pixel_spacing_mm or "not available",
             }
         )
-    a, b, c = st.columns(3)
+    complete_files = sum(bool(item.get("all_frames_processed")) for item in media_summary)
+    a, b, c, d = st.columns(4)
     a.metric("Files", len(media_summary))
-    b.metric("Frames sampled", len(all_frames))
+    b.metric("Frames processed", len(all_frames))
     c.metric("Reviewable by basic QC", f"{reviewable}/{len(all_frames)}")
+    d.metric("Complete decodes", f"{complete_files}/{len(media_summary)}")
 
     st.markdown("### Frame review")
     st.caption(
-        "QC flags are simple technical checks. They do not establish the correct anatomic plane or diagnostic adequacy."
+        "All frames contribute to QC and installed-model inference. Thumbnails are an evenly spaced display preview only. "
+        "QC flags do not establish the anatomic plane or diagnostic adequacy."
     )
+    shown = set(preview_indices(len(all_frames), preview_limit))
     columns = st.columns(4)
+    display_index = 0
     for index, (frame, row) in enumerate(zip(all_frames, metrics_rows)):
-        with columns[index % 4]:
+        if index not in shown:
+            continue
+        with columns[display_index % 4]:
             st.image(frame.image, use_container_width=True)
             st.caption(f"{frame.source_name} | frame {frame.frame_index} | {row['quality_flag']}")
+        display_index += 1
     with st.expander("Technical quality table"):
         st.dataframe(metrics_rows, use_container_width=True, hide_index=True)
     return all_frames, media_summary, warnings
 
 
 def render_model_panel(frames: list[MediaFrame]) -> None:
-    st.subheader("Optional model inference")
+    st.subheader("Every-frame plane and feature inference")
     manifest, model_warnings = discover_model(MODEL_DIR)
     for warning in model_warnings:
         st.info(warning)
     if manifest is None:
         st.write(
             "The media reader and consensus classifier are active. Image-derived clinical suggestions stay disabled until "
-            "a versioned, validated ONNX feature model and manifest are installed."
+            "a versioned, validated ONNX feature model with coronal and sagittal plane outputs is installed."
         )
         return
     st.write(f"Model: `{manifest.model_id}` version `{manifest.version}`")
@@ -207,20 +239,46 @@ def render_model_panel(frames: list[MediaFrame]) -> None:
     if not frames:
         st.info("Load media before running the installed model.")
         return
-    if st.button("Run installed feature model", disabled=not (MODEL_DIR / manifest.onnx_file).exists()):
-        try:
-            model = OnnxFeatureModel(MODEL_DIR, manifest)
-            prediction = model.predict([frame.image for frame in frames])
-            st.session_state.model_prediction = prediction_to_json(prediction)
-        except Exception as exc:
-            st.error(f"Inference failed safely: {exc}")
+    can_run = not model_warnings and (MODEL_DIR / manifest.onnx_file).exists()
+    if st.button("Analyze every frame with installed model", disabled=not can_run):
+        with st.spinner(f"Analyzing all {len(frames)} frames in order..."):
+            try:
+                model = OnnxFeatureModel(MODEL_DIR, manifest)
+                prediction = model.predict(frames)
+                st.session_state.model_prediction = prediction_to_json(prediction)
+            except Exception as exc:
+                st.error(f"Inference failed safely: {exc}")
     if prediction := st.session_state.get("model_prediction"):
         if prediction["abstained"]:
             st.warning("Model abstained: " + "; ".join(prediction["abstention_reasons"]))
-        st.json(prediction)
+        counts = prediction["plane_counts"]
+        a, b, c, d = st.columns(4)
+        a.metric("Frames analyzed", prediction["processed_frame_count"])
+        b.metric("Accepted coronal", counts.get("coronal", 0))
+        c.metric("Accepted sagittal", counts.get("sagittal", 0))
+        d.metric("Indeterminate plane", counts.get("indeterminate", 0))
+        frame_rows = [
+            {
+                "source": row["source_name"],
+                "frame": row["frame_index"],
+                "plane": row["plane"],
+                "plane confidence": round(row["plane_confidence"], 4),
+                "ambiguous": row["ambiguous_plane"],
+            }
+            for row in prediction["frame_predictions"]
+        ]
+        with st.expander("Per-frame plane assignments"):
+            st.dataframe(frame_rows, use_container_width=True, hide_index=True)
+        with st.expander("Study-level model probabilities"):
+            st.json(
+                {
+                    "probabilities": prediction["probabilities"],
+                    "probabilities_by_plane": prediction["probabilities_by_plane"],
+                }
+            )
 
 
-def render_evidence_tab(frames: list[MediaFrame]) -> None:
+def render_evidence_tab(frames: list[MediaFrame], media_summary: list[dict]) -> None:
     st.subheader("2. Verify features and classify")
     st.write(
         "The Canadian consensus algorithm classifies verified imaging features. AI probabilities, when available, are "
@@ -228,6 +286,14 @@ def render_evidence_tab(frames: list[MediaFrame]) -> None:
     )
     render_model_panel(frames)
     st.divider()
+
+    all_frames_processed = bool(media_summary) and all(
+        bool(item.get("all_frames_processed")) for item in media_summary
+    )
+    if all_frames_processed:
+        st.success(f"Complete sequential decode confirmed for {len(frames)} frames.")
+    elif media_summary:
+        st.error("At least one source did not decode every reported frame. Final classification is disabled.")
 
     with st.form("evidence_form"):
         study_code = st.text_input("De-identified study code", placeholder="CUS-0001")
@@ -240,9 +306,18 @@ def render_evidence_tab(frames: list[MediaFrame]) -> None:
             age = st.number_input("Postnatal age, days", 0.0, 180.0, 3.0, 0.5, disabled=not has_age)
 
         st.markdown("### Study completeness")
-        complete_views = st.checkbox(
-            "Required coronal and parasagittal anterior-fontanel views plus posterior-fossa assessment are complete"
-        )
+        model_prediction = st.session_state.get("model_prediction") or {}
+        plane_counts = model_prediction.get("plane_counts") or {}
+        if plane_counts:
+            st.caption(
+                "Installed-model frame counts: "
+                f"coronal {plane_counts.get('coronal', 0)}, sagittal {plane_counts.get('sagittal', 0)}, "
+                f"posterior fossa {plane_counts.get('posterior_fossa', 0)}. Confirm coverage from the complete examination."
+            )
+        coronal_complete = st.checkbox("Complete coronal sweep reviewed and adequate")
+        sagittal_complete = st.checkbox("Complete sagittal or parasagittal sweep reviewed and adequate")
+        posterior_fossa_complete = st.checkbox("Posterior fossa assessment reviewed and adequate")
+        complete_views = coronal_complete and sagittal_complete and posterior_fossa_complete
         serial = st.checkbox("A serial study is available for temporal evolution")
 
         left_column, right_column = st.columns(2)
@@ -291,10 +366,17 @@ def render_evidence_tab(frames: list[MediaFrame]) -> None:
             prior_gmh_ivh=prior,  # type: ignore[arg-type]
             vi_above_97th=vi97,  # type: ignore[arg-type]
             vi_above_97th_plus_4mm=vi97p4,  # type: ignore[arg-type]
+            coronal_views_complete=coronal_complete,
+            sagittal_views_complete=sagittal_complete,
+            posterior_fossa_views_complete=posterior_fossa_complete,
             complete_required_views=complete_views,
+            all_frames_processed=all_frames_processed,
+            decoded_frame_count=len(frames),
             serial_study_available=serial,
             model_id=model_prediction.get("model_id"),
             model_version=model_prediction.get("model_version"),
+            model_processed_frame_count=model_prediction.get("processed_frame_count"),
+            model_plane_counts=model_prediction.get("plane_counts") or {},
         )
         st.session_state.study_evidence = evidence
         st.session_state.study_classification = classify_study(evidence)
@@ -325,8 +407,23 @@ def render_report_tab(media_summary: list[dict]) -> None:
     if evidence is None or classification is None:
         st.info("Complete the structured evidence form to create a report.")
         return
-    report = build_report(evidence, classification, media_summary)
+    report = build_report(
+        evidence,
+        classification,
+        media_summary,
+        model_prediction=st.session_state.get("model_prediction"),
+    )
     c = report["classification"]
+    if c["classification_status"].startswith("Final"):
+        st.success(c["classification_status"])
+    else:
+        st.warning(c["classification_status"])
+    st.caption(
+        "View coverage: "
+        f"coronal {c['view_coverage']['coronal']}, "
+        f"sagittal or parasagittal {c['view_coverage']['sagittal_or_parasagittal']}, "
+        f"posterior fossa {c['view_coverage']['posterior_fossa']}"
+    )
     left_col, right_col = st.columns(2)
     with left_col:
         render_side_result("Left hemisphere", c["left"])
@@ -411,7 +508,6 @@ media_tab, evidence_tab, report_tab = st.tabs(["Media", "Evidence", "Report"])
 with media_tab:
     frames, media_summary, _ = render_media_tab()
 with evidence_tab:
-    render_evidence_tab(frames)
+    render_evidence_tab(frames, media_summary)
 with report_tab:
     render_report_tab(media_summary)
-

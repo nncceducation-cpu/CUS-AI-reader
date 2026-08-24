@@ -3,8 +3,16 @@
   "version": "0.0.0",
   "onnx_file": "cus-multitask-example.onnx",
   "input_size": [512, 512],
+  "batch_size": 16,
+  "plane_confidence_threshold": 0.7,
+  "plane_margin": 0.1,
+  "aggregation_top_k": 3,
   "labels": [
     "adequate_plane",
+    "plane_coronal",
+    "plane_sagittal",
+    "plane_posterior_fossa",
+    "plane_other",
     "left_germinal_matrix_hemorrhage",
     "right_germinal_matrix_hemorrhage",
     "left_intraventricular_blood",
@@ -23,4 +31,3 @@
   "validated": false,
   "intended_use": "Research only. Example contract, not a clinical model."
 }
-

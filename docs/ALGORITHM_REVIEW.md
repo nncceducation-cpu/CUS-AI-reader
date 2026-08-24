@@ -66,13 +66,13 @@ For 2D tasks, compare nnU-Net v2, U-Net with an ultrasound-pretrained encoder, a
 
 ### 4. Clip and study aggregation
 
-Do not classify every frame as an independent infant. Sample the full clip, keep high-quality frames, then aggregate frame features with one of these methods:
+Run plane and feature inference on every decodable cine frame in sequence. Display thumbnails can be limited, but diagnostic processing must not use that preview limit. Do not classify each frame as an independent infant. Retain every per-frame output, mark ambiguous planes, then aggregate accepted frame features with one of these methods:
 
 - attention-based multiple-instance learning for small datasets
 - temporal convolution for short ordered clips
 - a video transformer only after the dataset is large enough to avoid overfitting
 
-Apply temporal smoothing so a single noisy frame cannot determine a study label. Aggregate by plane and hemisphere before producing study-level evidence. The worst verified grade in the first postnatal week is used for initial GMH-IVH classification, consistent with the consensus paper.
+Apply temporal smoothing so a single noisy frame cannot determine a study label. Aggregate by coronal or sagittal plane and hemisphere before producing study-level evidence. Require accepted frames from both plane families before the model can claim complete anterior-fontanel coverage. The worst verified grade in the first postnatal week is used for initial GMH-IVH classification, consistent with the consensus paper.
 
 ### 5. Measurements
 
@@ -118,4 +118,3 @@ The model predicts features. The rule engine in `cus_ai/clinical.py` maps verifi
 7. Szentimrey Z, de Ribaupierre S, Fenster A, Ukwatta E. Semi-supervised learning framework with shape encoding for neonatal ventricular segmentation from 3D ultrasound. Med Phys. 2024;51. [doi:10.1002/mp.17242](https://doi.org/10.1002/mp.17242).
 8. Jiao J, Zhou J, Li X, et al. USFM: A Universal Ultrasound Foundation Model Generalized to Tasks and Organs towards Label Efficient Image Analysis. 2024. [arXiv:2401.00153](https://arxiv.org/abs/2401.00153).
 9. Pham HN, et al. Validity of ChatGPT in Assisting Diagnosis of Periventricular-Intraventricular Hemorrhage via Cranial Ultrasound Imaging in Very Preterm Infants. 2025. [PubMed 40376373](https://pubmed.ncbi.nlm.nih.gov/40376373/).
-
