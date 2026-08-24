@@ -70,6 +70,7 @@ def offline_environment(port: int) -> dict[str, str]:
         {
             "CUS_AI_OFFLINE": "1",
             "PYTHONUTF8": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
             "STREAMLIT_BROWSER_GATHER_USAGE_STATS": "false",
             "STREAMLIT_SERVER_ADDRESS": "127.0.0.1",
             "STREAMLIT_SERVER_PORT": str(port),
@@ -125,6 +126,7 @@ def open_local_browser(local_url: str) -> bool:
 def check_installation() -> int:
     required_modules = (
         "streamlit",
+        "pandas",
         "numpy",
         "PIL",
         "pydicom",
@@ -150,6 +152,13 @@ def check_installation() -> int:
 
 
 def run_app(open_browser: bool = True, exit_after_ready: bool = False) -> int:
+    if check_installation() != 0:
+        report_status(
+            "The offline installation is incomplete. Do not skip ZIP extraction errors. "
+            "Delete this copy and extract the complete package to a short folder such as C:\\CUSAI."
+        )
+        return 1
+
     port = choose_local_port()
     local_url = f"http://127.0.0.1:{port}"
     report_status("CUS AI Reader local offline edition")
@@ -171,10 +180,14 @@ def run_app(open_browser: bool = True, exit_after_ready: bool = False) -> int:
         time.sleep(0.25)
 
     if not ready:
+        exit_code = process.poll()
         if process.poll() is None:
             process.terminate()
             process.wait(timeout=10)
-        report_status("The local app did not become ready within 90 seconds.")
+        if exit_code is None:
+            report_status("The local app did not become ready within 90 seconds.")
+        else:
+            report_status(f"The local server stopped during startup with exit code {exit_code}.")
         return 1
 
     report_status(f"The local app is ready at {local_url}")
@@ -225,3 +238,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
