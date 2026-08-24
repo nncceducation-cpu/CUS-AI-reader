@@ -14,7 +14,7 @@ from cus_ai.reporting import build_report, report_to_markdown
 from cus_ai.schemas import SideEvidence, StudyEvidence
 
 
-APP_VERSION = "0.3.1"
+APP_VERSION = "0.3.2"
 ROOT = Path(__file__).parent
 MODEL_DIR = ROOT / "models"
 OFFLINE_MODE = os.environ.get("CUS_AI_OFFLINE", "0") == "1"
@@ -231,9 +231,13 @@ def render_model_panel(frames: list[MediaFrame]) -> None:
     for warning in model_warnings:
         st.info(warning)
     if manifest is None:
-        st.write(
-            "The media reader and consensus classifier are active. Image-derived clinical suggestions stay disabled until "
-            "a versioned, validated ONNX feature model with coronal and sagittal plane outputs is installed."
+        st.warning(
+            "Automatic image grading is unavailable because no trained neonatal cranial-ultrasound model is installed. "
+            "The clip reader and expert-entered Canadian consensus classifier remain available below."
+        )
+        st.caption(
+            "The app will not substitute generic image heuristics for a validated model. Review the complete examination, "
+            "record the verified findings, then select Classify with consensus rules."
         )
         return
     st.write(f"Model: `{manifest.model_id}` version `{manifest.version}`")
@@ -285,6 +289,10 @@ def render_evidence_tab(frames: list[MediaFrame], media_summary: list[dict]) -> 
     st.write(
         "The Canadian consensus algorithm classifies verified imaging features. AI probabilities, when available, are "
         "kept separate and never become clinical evidence without human confirmation."
+    )
+    st.info(
+        "To create a grade without an installed image model, a qualified reviewer must complete the findings form below. "
+        "The consensus result will appear on this page immediately after submission."
     )
     render_model_panel(frames)
     st.divider()
@@ -382,7 +390,26 @@ def render_evidence_tab(frames: list[MediaFrame], media_summary: list[dict]) -> 
         )
         st.session_state.study_evidence = evidence
         st.session_state.study_classification = classify_study(evidence)
-        st.success("Structured classification created. Open the Report tab to review and export it.")
+        st.success("Structured classification created.")
+
+    current_classification = st.session_state.get("study_classification")
+    if current_classification is not None:
+        result = current_classification.to_dict()
+        st.divider()
+        st.markdown("### Canadian consensus classification")
+        if result["classification_status"].startswith("Final"):
+            st.success(result["classification_status"])
+        else:
+            st.warning(result["classification_status"])
+        left_result, right_result = st.columns(2)
+        with left_result:
+            render_side_result("Left hemisphere", result["left"])
+        with right_result:
+            render_side_result("Right hemisphere", result["right"])
+        st.write(f"**White matter injury:** {result['wmi']}")
+        st.write(f"**Cerebellar hemorrhage:** {result['cerebellar_hemorrhage']}")
+        st.write(f"**PHVD:** {result['phvd']}")
+        st.caption("Open the Report tab to review limitations and download the audit record.")
 
 
 def render_side_result(title: str, result: dict) -> None:
@@ -472,7 +499,7 @@ def sidebar() -> None:
         st.sidebar.success("Local offline mode")
     manifest, warnings = discover_model(MODEL_DIR)
     if manifest is None:
-        st.sidebar.warning("Diagnostic model: not installed")
+        st.sidebar.warning("Automatic image model: not installed")
     elif warnings:
         st.sidebar.warning(f"Model: {manifest.model_id} v{manifest.version}, guarded")
     else:
@@ -506,8 +533,8 @@ if OFFLINE_MODE:
 st.markdown(
     """
     <div class="research-banner">
-    Research use only. No validated diagnostic model weights are bundled. The complete examination and any output
-    require review by a qualified clinician.
+    Research use only. No validated diagnostic model weights are bundled. Expert-entered Canadian consensus
+    classification is available, and every output requires review by a qualified clinician.
     </div>
     """,
     unsafe_allow_html=True,
@@ -520,3 +547,4 @@ with evidence_tab:
     render_evidence_tab(frames, media_summary)
 with report_tab:
     render_report_tab(media_summary)
+
