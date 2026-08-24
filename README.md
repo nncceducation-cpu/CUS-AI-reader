@@ -28,12 +28,15 @@ Open the displayed local URL, accept the research-use gate, then:
 
 The portable Windows package includes an isolated Python runtime and locked application dependencies. It does not require a separate Python installation or an internet connection after the ZIP has been created.
 
-1. Extract the complete `CUS-AI-reader-offline-windows-x64-v0.3.1.zip` package.
-2. Double-click `Start CUS AI Reader.cmd`.
-3. Use the browser page opened at `127.0.0.1`.
-4. Close the launcher window to stop the local server.
+1. Move the versioned offline ZIP to `C:\` or another short location before extraction.
+2. Extract the complete ZIP without skipping any file. It creates a short `CUSAI` folder to avoid Windows path-length failures.
+3. Open `CUSAI` and double-click `Start CUS AI Reader.cmd`.
+4. Use the browser page opened at `127.0.0.1`.
+5. Close the launcher window to stop the local server.
 
 If the browser does not open automatically, keep the launcher window open and double-click `CUS AI Reader Local Page.url`. Startup details are normally written to `%LOCALAPPDATA%\CUS-AI-reader\startup.log`, with the Windows temporary folder used as a fallback.
+
+If Windows reports `Path too long`, cancel extraction and use a shorter destination. Do not select `Skip`, because an incomplete pandas or compiled-extension installation can crash the technical-quality table. The launcher checks the runtime before starting and reports an incomplete extraction clearly.
 
 The launcher binds Streamlit to the loopback interface only, disables Streamlit usage telemetry, and prevents the file watcher from starting. Uploaded media remains in the active local process. Reports are written only when the user downloads them.
 
@@ -90,3 +93,4 @@ The HUS Diagnostic application was used to cross-check the four-step branching a
 - Diagnostic model weights: not available and not represented as complete
 - External clinical validation: not started
 - Regulatory authorization: not started
+
