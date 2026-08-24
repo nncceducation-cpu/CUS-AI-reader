@@ -54,13 +54,22 @@ def _classify_side(e: SideEvidence) -> SideClassification:
     elif e.confined_to_germinal_matrix == "no" or e.intraventricular_blood == "yes":
         if e.intraventricular_blood != "yes":
             warnings.append("Extension into the ventricular system was not explicitly confirmed.")
-        elif e.ventricular_distension == "yes" and e.ahw_mm is not None and e.ahw_mm > 6:
+        elif e.ventricular_distension == "yes" and (
+            (e.ahw_mm is not None and e.ahw_mm > 6) or e.ahw_above_6_mm == "yes"
+        ):
             grade = "Grade III GMH-IVH"
             complete = True
-            reasoning.append(
-                f"Intraventricular blood acutely distends the ipsilateral ventricle and AHW is {e.ahw_mm:.1f} mm, above 6 mm."
-            )
-        elif e.ventricular_distension == "unknown" or e.ahw_mm is None:
+            if e.ahw_mm is not None:
+                reasoning.append(
+                    f"Intraventricular blood acutely distends the ipsilateral ventricle and AHW is {e.ahw_mm:.1f} mm, above 6 mm."
+                )
+            else:
+                reasoning.append(
+                    "Intraventricular blood acutely distends the ipsilateral ventricle and the recorded AHW threshold is above 6 mm."
+                )
+        elif e.ventricular_distension == "unknown" or (
+            e.ahw_mm is None and e.ahw_above_6_mm == "unknown"
+        ):
             warnings.append("Grade II versus III requires acute ventricular distension and AHW measurement.")
         else:
             grade = "Grade II GMH-IVH"
@@ -120,13 +129,15 @@ def _classify_cbh(value: str) -> str:
 
 def _classify_phvd(e: StudyEvidence) -> str:
     max_ahw = max([x for x in (e.left.ahw_mm, e.right.ahw_mm) if x is not None], default=None)
+    ahw_above_6 = any(side.ahw_above_6_mm == "yes" for side in (e.left, e.right))
+    ahw_above_10 = any(side.ahw_above_10_mm == "yes" for side in (e.left, e.right))
     if e.prior_gmh_ivh == "no":
         return "Not PHVD: no preceding GMH-IVH recorded"
     if e.prior_gmh_ivh == "unknown":
         return "Indeterminate: preceding GMH-IVH status is unknown"
-    if e.vi_above_97th_plus_4mm == "yes" or (max_ahw is not None and max_ahw > 10):
+    if e.vi_above_97th_plus_4mm == "yes" or (max_ahw is not None and max_ahw > 10) or ahw_above_10:
         return "Severe PHVD"
-    if e.vi_above_97th == "yes" and max_ahw is not None and max_ahw > 6:
+    if e.vi_above_97th == "yes" and ((max_ahw is not None and max_ahw > 6) or ahw_above_6):
         return "Moderate PHVD"
     if e.vi_above_97th == "no" and (max_ahw is None or max_ahw <= 6):
         return "No moderate or severe PHVD by recorded thresholds"
@@ -211,3 +222,4 @@ def classify_study(e: StudyEvidence) -> StudyClassification:
         ),
         limitations=limitations,
     )
+

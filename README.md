@@ -1,6 +1,6 @@
 # CUS AI Reader
 
-CUS AI Reader is a research-use web application for neonatal cranial ultrasound study review. It accepts a single image, an image set, DICOM objects, or cine clips. The app decodes every frame sequentially, performs technical quality checks on every frame, and sends every frame to an installed validated model. The model contract identifies coronal, sagittal, posterior fossa, other, or indeterminate planes before plane-specific feature aggregation. Clinician-verified findings then enter the Canadian consensus GMH-IVH and PVHI rules independently for the left and right hemispheres. The app also classifies serial WMI, cerebellar hemorrhage, and PHVD, then exports an auditable JSON or Markdown record.
+CUS AI Reader is a research-use web application for neonatal cranial ultrasound study review. It accepts a single image, an image set, DICOM objects, or cine clips. The app decodes every frame sequentially, performs technical quality checks on every frame, and sends every frame to an installed model. The model contract identifies coronal, sagittal, posterior fossa, other, or indeterminate planes before plane-specific feature aggregation. AI feature decisions and independently entered expert findings enter the same Canadian consensus rule engine. The app displays AI grading, expert grading, exact agreement, and auditable JSON, Markdown, study-level CSV, and every-frame CSV exports.
 
 The repository also provides a guarded ONNX interface for a future validated feature model. No diagnostic weights are bundled. The software will not silently substitute heuristics or a general-purpose vision-language model for a validated neonatal ultrasound model.
 
@@ -21,8 +21,9 @@ Open the displayed local URL, accept the research-use gate, then:
 
 1. Upload images, DICOM files, or a clip in the Media tab.
 2. Confirm that every source frame decoded, then review the display preview and complete technical QC table.
-3. Record verified findings in the Evidence tab.
-4. Review and export the consensus classification in the Report tab.
+3. Run the installed model in the AI grading tab.
+4. Record an independent expert grade without accepting AI suggestions in the Expert grading tab.
+5. Review agreement and export study-level and every-frame raw CSV records.
 
 ## Portable offline Windows edition
 
@@ -66,11 +67,15 @@ The current contract expects an ONNX output shaped `[batch, labels]`, with one p
 - `app.py`: Streamlit interface
 - `cus_ai/media.py`: image, DICOM, and clip ingestion
 - `cus_ai/model.py`: guarded ONNX adapter and abstention state
+- `cus_ai/ai_consensus.py`: probability-to-feature decisions and AI consensus grading
+- `cus_ai/agreement.py`: expert versus AI agreement and raw CSV exports
 - `cus_ai/clinical.py`: deterministic Canadian consensus rule engine
 - `cus_ai/reporting.py`: auditable report export
 - `docs/ALGORITHM_REVIEW.md`: evidence review and selected architecture
 - `docs/CLINICAL_SPEC.md`: clinical classification specification
 - `docs/VALIDATION_PROTOCOL.md`: development and external validation protocol
+- `docs/PILOT_DATASET_AUDIT.md`: audit and permitted role of the eight-infant pilot dataset
+- `docs/AI_CONSENSUS_METHOD.md`: feature targets, abstention, and model-development method
 - `docs/DATA_DICTIONARY.md`: annotation and inference schema
 - `docs/SECURITY_PRIVACY.md`: privacy and deployment controls
 - `tests/`: executable rule, media, model, and reporting checks
@@ -88,6 +93,9 @@ The HUS Diagnostic application was used to cross-check the four-step branching a
 - Coronal and sagittal per-frame model contract and plane-aware aggregation: implemented
 - Technical QC: implemented
 - Consensus rule engine: implemented and tested
+- Separate AI grading and independent expert grading: implemented
+- Expert versus AI exact agreement: implemented
+- Study-level and every-frame raw CSV export: implemented
 - Structured export: implemented
 - Portable offline Windows x64 launcher and reproducible bundle: implemented
 - Diagnostic model weights: not available and not represented as complete

@@ -34,6 +34,7 @@ class ModelManifest:
     plane_confidence_threshold: float = 0.70
     plane_margin: float = 0.10
     aggregation_top_k: int = 3
+    decision_margin: float = 0.05
 
     @classmethod
     def from_path(cls, path: Path) -> "ModelManifest":
@@ -51,6 +52,7 @@ class ModelManifest:
             plane_confidence_threshold=float(raw.get("plane_confidence_threshold", 0.70)),
             plane_margin=float(raw.get("plane_margin", 0.10)),
             aggregation_top_k=max(1, int(raw.get("aggregation_top_k", 3))),
+            decision_margin=max(0.0, float(raw.get("decision_margin", 0.05))),
         )
 
 
@@ -242,3 +244,4 @@ def prediction_to_json(prediction: StudyPrediction) -> dict[str, Any]:
         "abstained": prediction.abstained,
         "abstention_reasons": prediction.abstention_reasons,
     }
+

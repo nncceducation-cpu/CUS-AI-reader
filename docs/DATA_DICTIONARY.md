@@ -75,6 +75,11 @@ Every inference record must include:
 - clinician acceptance or correction for every suggested feature
 - final classification and all limitations
 
+## Expert versus AI agreement and exports
+
+The study-level CSV stores expert evidence, expert consensus classification, AI feature decisions, AI consensus classification, study-level model probabilities, abstention reasons, and exact domain agreement in one row. The every-frame CSV stores one row for every decoded frame with source name, frame index, plane assignment, plane confidence, ambiguity flag, and all available feature probabilities. Source pixels are never embedded in either CSV.
+
 ## Annotation quality control
 
 Use explicit `unknown` rather than converting missing evidence to `no`. Store the two initial reader labels, adjudicated label, reader role, and review timestamp. For masks and calipers, store each reader's annotation and the adjudicated result. Calculate agreement before adjudication.
+

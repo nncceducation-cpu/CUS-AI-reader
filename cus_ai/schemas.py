@@ -16,6 +16,8 @@ class SideEvidence:
     intraventricular_blood: Answer = "unknown"
     ventricular_distension: Answer = "unknown"
     ahw_mm: float | None = None
+    ahw_above_6_mm: Answer = "unknown"
+    ahw_above_10_mm: Answer = "unknown"
     adjacent_periventricular_echogenicity: Answer = "unknown"
     echogenicity_brighter_than_choroid: Answer = "unknown"
     clinician_verified: bool = False
@@ -47,6 +49,7 @@ class StudyEvidence:
     model_version: str | None = None
     model_processed_frame_count: int | None = None
     model_plane_counts: dict[str, int] = field(default_factory=dict)
+    evidence_source: str = "expert"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -79,3 +82,4 @@ class StudyClassification:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+

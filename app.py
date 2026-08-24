@@ -7,6 +7,8 @@ from pathlib import Path
 
 import streamlit as st
 
+from cus_ai.agreement import agreement_summary, compare_classifications, frame_csv, study_csv
+from cus_ai.ai_consensus import grade_prediction
 from cus_ai.clinical import classify_study
 from cus_ai.media import MediaFrame, decode_media, quality_metrics
 from cus_ai.model import OnnxFeatureModel, discover_model, prediction_to_json
@@ -14,7 +16,7 @@ from cus_ai.reporting import build_report, report_to_markdown
 from cus_ai.schemas import SideEvidence, StudyEvidence
 
 
-APP_VERSION = "0.3.2"
+APP_VERSION = "0.4.0"
 ROOT = Path(__file__).parent
 MODEL_DIR = ROOT / "models"
 OFFLINE_MODE = os.environ.get("CUS_AI_OFFLINE", "0") == "1"
@@ -104,6 +106,8 @@ def side_form(side: str) -> SideEvidence:
         intraventricular_blood=intraventricular,  # type: ignore[arg-type]
         ventricular_distension=distension,  # type: ignore[arg-type]
         ahw_mm=float(ahw) if ahw is not None else None,
+        ahw_above_6_mm=("yes" if ahw > 6 else "no") if ahw is not None else "unknown",
+        ahw_above_10_mm=("yes" if ahw > 10 else "no") if ahw is not None else "unknown",
         adjacent_periventricular_echogenicity=pve,  # type: ignore[arg-type]
         echogenicity_brighter_than_choroid=brighter,  # type: ignore[arg-type]
         clinician_verified=verified,
@@ -175,6 +179,7 @@ def render_media_tab() -> tuple[list[MediaFrame], list[dict], list[str]]:
     if st.session_state.get("media_fingerprint") != media_fingerprint:
         st.session_state.media_fingerprint = media_fingerprint
         st.session_state.pop("model_prediction", None)
+        st.session_state.pop("ai_consensus_result", None)
         st.session_state.pop("study_evidence", None)
         st.session_state.pop("study_classification", None)
 
@@ -225,8 +230,12 @@ def render_media_tab() -> tuple[list[MediaFrame], list[dict], list[str]]:
     return all_frames, media_summary, warnings
 
 
-def render_model_panel(frames: list[MediaFrame]) -> None:
-    st.subheader("Every-frame plane and feature inference")
+def render_model_panel(frames: list[MediaFrame], media_summary: list[dict]) -> None:
+    st.subheader("2. AI grading")
+    st.write(
+        "The installed model evaluates every decoded frame, assigns the imaging plane, estimates consensus features, "
+        "then sends those feature decisions to the same deterministic Canadian consensus rule engine used for expert grading."
+    )
     manifest, model_warnings = discover_model(MODEL_DIR)
     for warning in model_warnings:
         st.info(warning)
@@ -245,13 +254,31 @@ def render_model_panel(frames: list[MediaFrame]) -> None:
     if not frames:
         st.info("Load media before running the installed model.")
         return
-    can_run = not model_warnings and (MODEL_DIR / manifest.onnx_file).exists()
+    model_exists = (MODEL_DIR / manifest.onnx_file).exists()
+    research_ack = True
+    if model_warnings and model_exists:
+        research_ack = st.checkbox(
+            "Run this guarded model for research testing despite the warnings above",
+            value=False,
+        )
+    can_run = model_exists and research_ack
     if st.button("Analyze every frame with installed model", disabled=not can_run):
         with st.spinner(f"Analyzing all {len(frames)} frames in order..."):
             try:
                 model = OnnxFeatureModel(MODEL_DIR, manifest)
                 prediction = model.predict(frames)
-                st.session_state.model_prediction = prediction_to_json(prediction)
+                prediction_json = prediction_to_json(prediction)
+                st.session_state.model_prediction = prediction_json
+                all_frames_processed = bool(media_summary) and all(
+                    bool(item.get("all_frames_processed")) for item in media_summary
+                )
+                ai_result = grade_prediction(
+                    prediction_json,
+                    thresholds=manifest.thresholds,
+                    decision_margin=manifest.decision_margin,
+                    all_frames_processed=all_frames_processed,
+                )
+                st.session_state.ai_consensus_result = ai_result.to_dict()
             except Exception as exc:
                 st.error(f"Inference failed safely: {exc}")
     if prediction := st.session_state.get("model_prediction"):
@@ -282,20 +309,37 @@ def render_model_panel(frames: list[MediaFrame]) -> None:
                     "probabilities_by_plane": prediction["probabilities_by_plane"],
                 }
             )
+    if ai_result := st.session_state.get("ai_consensus_result"):
+        st.markdown("### AI Canadian consensus grade")
+        if ai_result["abstained"]:
+            st.warning("AI abstained from a final grade: " + "; ".join(ai_result["abstention_reasons"]))
+        else:
+            st.success("AI produced an accepted research grade for expert comparison.")
+        result = ai_result["classification"]
+        left_result, right_result = st.columns(2)
+        with left_result:
+            render_side_result("AI left hemisphere", result["left"])
+        with right_result:
+            render_side_result("AI right hemisphere", result["right"])
+        st.write(f"**AI white matter injury:** {result['wmi']}")
+        st.write(f"**AI cerebellar hemorrhage:** {result['cerebellar_hemorrhage']}")
+        st.write(f"**AI PHVD:** {result['phvd']}")
+        with st.expander("AI feature decisions and missing outputs"):
+            st.json(
+                {
+                    "feature_decisions": ai_result["feature_decisions"],
+                    "missing_outputs": ai_result["missing_outputs"],
+                }
+            )
 
 
 def render_evidence_tab(frames: list[MediaFrame], media_summary: list[dict]) -> None:
-    st.subheader("2. Verify features and classify")
+    st.subheader("3. Expert grading")
     st.write(
         "The Canadian consensus algorithm classifies verified imaging features. AI probabilities, when available, are "
         "kept separate and never become clinical evidence without human confirmation."
     )
-    st.info(
-        "To create a grade without an installed image model, a qualified reviewer must complete the findings form below. "
-        "The consensus result will appear on this page immediately after submission."
-    )
-    render_model_panel(frames)
-    st.divider()
+    st.info("Complete this form independently of the AI result to preserve an unbiased expert reference grade.")
 
     all_frames_processed = bool(media_summary) and all(
         bool(item.get("all_frames_processed")) for item in media_summary
@@ -387,16 +431,30 @@ def render_evidence_tab(frames: list[MediaFrame], media_summary: list[dict]) -> 
             model_version=model_prediction.get("model_version"),
             model_processed_frame_count=model_prediction.get("processed_frame_count"),
             model_plane_counts=model_prediction.get("plane_counts") or {},
+            evidence_source="expert",
         )
         st.session_state.study_evidence = evidence
         st.session_state.study_classification = classify_study(evidence)
-        st.success("Structured classification created.")
+        manifest, _ = discover_model(MODEL_DIR)
+        if model_prediction and manifest is not None:
+            ai_result = grade_prediction(
+                model_prediction,
+                thresholds=manifest.thresholds,
+                decision_margin=manifest.decision_margin,
+                study_code=evidence.study_code,
+                gestational_age_weeks=evidence.gestational_age_weeks,
+                postnatal_age_days=evidence.postnatal_age_days,
+                all_frames_processed=evidence.all_frames_processed,
+                serial_study_available=evidence.serial_study_available,
+            )
+            st.session_state.ai_consensus_result = ai_result.to_dict()
+        st.success("Independent expert consensus classification created.")
 
     current_classification = st.session_state.get("study_classification")
     if current_classification is not None:
         result = current_classification.to_dict()
         st.divider()
-        st.markdown("### Canadian consensus classification")
+        st.markdown("### Expert Canadian consensus classification")
         if result["classification_status"].startswith("Final"):
             st.success(result["classification_status"])
         else:
@@ -430,17 +488,25 @@ def render_side_result(title: str, result: dict) -> None:
 
 
 def render_report_tab(media_summary: list[dict]) -> None:
-    st.subheader("3. Review and export")
+    st.subheader("4. Agreement and export")
     evidence = st.session_state.get("study_evidence")
     classification = st.session_state.get("study_classification")
     if evidence is None or classification is None:
         st.info("Complete the structured evidence form to create a report.")
         return
+    ai_result = st.session_state.get("ai_consensus_result")
+    agreement_rows = (
+        compare_classifications(classification.to_dict(), ai_result["classification"])
+        if ai_result
+        else []
+    )
     report = build_report(
         evidence,
         classification,
         media_summary,
         model_prediction=st.session_state.get("model_prediction"),
+        ai_consensus=ai_result,
+        agreement=agreement_summary(agreement_rows) if agreement_rows else None,
     )
     c = report["classification"]
     if c["classification_status"].startswith("Final"):
@@ -469,9 +535,45 @@ def render_report_tab(media_summary: list[dict]) -> None:
         for item in c["limitations"]:
             st.warning(item)
 
+    if ai_result:
+        st.markdown("### AI grading")
+        if ai_result["abstained"]:
+            st.warning("AI abstained: " + "; ".join(ai_result["abstention_reasons"]))
+        ai_classification = ai_result["classification"]
+        ai_left, ai_right = st.columns(2)
+        with ai_left:
+            render_side_result("AI left hemisphere", ai_classification["left"])
+        with ai_right:
+            render_side_result("AI right hemisphere", ai_classification["right"])
+        st.write(f"**AI white matter injury:** {ai_classification['wmi']}")
+        st.write(f"**AI cerebellar hemorrhage:** {ai_classification['cerebellar_hemorrhage']}")
+        st.write(f"**AI PHVD:** {ai_classification['phvd']}")
+
+        st.markdown("### Expert versus AI agreement")
+        summary = agreement_summary(agreement_rows)
+        a, b, c_metric = st.columns(3)
+        a.metric("Domains compared", summary["domains_compared"])
+        b.metric("Exact agreements", summary["domains_agreeing"])
+        c_metric.metric("Percent agreement", f"{summary['percent_agreement']:.1f}%")
+        st.dataframe(agreement_rows, use_container_width=True, hide_index=True)
+        st.caption(
+            "This is within-study exact agreement. Domain-specific Cohen kappa requires multiple independently graded studies."
+        )
+    else:
+        st.info("Run the installed AI model to calculate expert-versus-AI agreement.")
+
     json_text = json.dumps(report, indent=2)
     markdown_text = report_to_markdown(report)
-    a, b = st.columns(2)
+    model_prediction = st.session_state.get("model_prediction")
+    study_csv_text = study_csv(
+        evidence.to_dict(),
+        classification.to_dict(),
+        ai_result,
+        model_prediction,
+        agreement_rows,
+    )
+    frame_csv_text = frame_csv(model_prediction)
+    a, b, c_download, d_download = st.columns(4)
     with a:
         st.download_button(
             "Download JSON audit record",
@@ -487,6 +589,23 @@ def render_report_tab(media_summary: list[dict]) -> None:
             file_name=f"{evidence.study_code or 'cus-study'}-report.md",
             mime="text/markdown",
             use_container_width=True,
+        )
+    with c_download:
+        st.download_button(
+            "Download study raw CSV",
+            data=study_csv_text,
+            file_name=f"{evidence.study_code or 'cus-study'}-raw-study.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with d_download:
+        st.download_button(
+            "Download every-frame AI CSV",
+            data=frame_csv_text,
+            file_name=f"{evidence.study_code or 'cus-study'}-raw-frames.csv",
+            mime="text/csv",
+            use_container_width=True,
+            disabled=not bool((model_prediction or {}).get("frame_predictions")),
         )
     with st.expander("Full audit record"):
         st.json(report)
@@ -524,7 +643,7 @@ disclaimer_gate()
 sidebar()
 
 st.title("CUS AI Reader")
-st.caption("Neonatal cranial ultrasound study review and Canadian consensus classification")
+st.caption("Neonatal cranial ultrasound AI, expert grading, agreement, and Canadian consensus classification")
 if OFFLINE_MODE:
     st.success(
         "Local offline mode is active. The app is bound to this computer only, Streamlit usage telemetry is disabled, "
@@ -533,16 +652,20 @@ if OFFLINE_MODE:
 st.markdown(
     """
     <div class="research-banner">
-    Research use only. No validated diagnostic model weights are bundled. Expert-entered Canadian consensus
-    classification is available, and every output requires review by a qualified clinician.
+    Research use only. AI grades are shown separately from independent expert grades. Agreement and raw data exports
+    are available for model development, and every output requires review by a qualified clinician.
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-media_tab, evidence_tab, report_tab = st.tabs(["Media", "Evidence", "Report"])
+media_tab, ai_tab, evidence_tab, report_tab = st.tabs(
+    ["Media", "AI grading", "Expert grading", "Agreement and export"]
+)
 with media_tab:
     frames, media_summary, _ = render_media_tab()
+with ai_tab:
+    render_model_panel(frames, media_summary)
 with evidence_tab:
     render_evidence_tab(frames, media_summary)
 with report_tab:

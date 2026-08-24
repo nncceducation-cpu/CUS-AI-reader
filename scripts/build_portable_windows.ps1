@@ -16,7 +16,7 @@ if (-not $CacheDirectory) {
     $CacheDirectory = Join-Path $repoRoot ".portable-cache"
 }
 
-$appVersion = "0.3.2"
+$appVersion = "0.4.0"
 $bundleName = "CUS-AI-reader-offline-windows-x64-v$appVersion"
 $portableFolderName = "CUSAI"
 $stageContainer = Join-Path ([System.IO.Path]::GetTempPath()) "CUSAI-portable-build"
@@ -100,6 +100,7 @@ $filesToCopy = @(
     "README.md"
     "pyproject.toml"
     "requirements.txt"
+    "requirements-ml.txt"
     "requirements-portable.txt"
 )
 foreach ($relativePath in $filesToCopy) {

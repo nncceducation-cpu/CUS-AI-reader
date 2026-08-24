@@ -41,8 +41,9 @@ screen-capture metadata can remain in ultrasound media even after DICOM tags are
 Clinical boundary
 -----------------
 Research and education use only. This prototype is not a medical device. It must not be
-used for treatment or counselling decisions. No validated diagnostic model weights are
-included, so automatic image grading is unavailable. A qualified clinician can record
-verified findings and run the Canadian consensus rule engine. The complete examination
-and every output require qualified clinical review.
+used for treatment or counselling decisions. The offline runtime supports ONNX models,
+but no validated diagnostic model weights are included. When approved weights are placed
+in the models folder, the app shows AI grading separately from independent expert grading,
+calculates agreement, and exports study-level and every-frame raw CSV files. The complete
+examination and every output require qualified clinical review.
 
