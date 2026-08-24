@@ -23,7 +23,28 @@ def make_gif(frame_count=9, size=(320, 320)):
 def test_single_image_ingestion():
     result = decode_media("study.png", make_png())
     assert len(result.frames) == 1
-    assert result.frames[0].image.mode == "RGB"
+    # Frames are stored grayscale at the working size. The model converts to
+    # grayscale before inference and the quality metrics are grayscale, so this
+    # is the form every decision already consumed, held at a size a workstation
+    # can keep in memory for a full sweep.
+    assert result.frames[0].image.mode == "L"
+
+
+def test_large_frames_are_reduced_to_the_working_size():
+    from cus_ai.media import DecodeLimits
+
+    result = decode_media("big.png", make_png(size=(1024, 1024)))
+    assert max(result.frames[0].image.size) == 512
+    assert result.technical_metadata["native_size"] == [1024, 1024]
+    assert result.technical_metadata["working_edge"] == 512
+
+    finer = decode_media("big.png", make_png(size=(1024, 1024)), DecodeLimits(working_edge=768))
+    assert max(finer.frames[0].image.size) == 768
+
+
+def test_frames_below_the_working_size_are_not_upscaled():
+    result = decode_media("small.png", make_png(size=(240, 240)))
+    assert result.frames[0].image.size == (240, 240)
 
 
 def test_every_multiframe_image_frame_is_decoded_in_order():

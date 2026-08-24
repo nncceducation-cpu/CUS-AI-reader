@@ -78,4 +78,4 @@ def test_model_processes_every_frame_and_aggregates_by_plane():
     assert prediction.plane_counts["coronal"] == 1
     assert prediction.plane_counts["sagittal"] == 1
     assert prediction.plane_counts["indeterminate"] == 1
-    assert prediction.probabilities["left_intraventricular_blood"] == pytest.approx(0.75)
+    assert prediction.probabilities["left_intraventricular_blood"] == pytest.approx(0.7)

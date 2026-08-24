@@ -54,16 +54,70 @@ def test_ai_probabilities_enter_same_consensus_rule_engine():
     assert not result.abstained
 
 
-def test_uncertain_probability_forces_abstention():
+def test_step_two_is_derived_when_the_model_has_no_confinement_head():
+    """The manifest contract has no confinement label, so it must be derived.
+
+    Hemorrhage present with no intraventricular blood is grade I. The previous
+    alias lookup left this field unknown on every study and pinned the grade at
+    indeterminate.
+    """
+    prediction = complete_prediction()
+    probabilities = prediction["probabilities"]
+    probabilities.pop("left_confined_to_germinal_matrix")
+    probabilities["left_intraventricular_blood"] = 0.05
+    probabilities["left_ventricular_distension"] = 0.05
+    probabilities["left_ahw_above_6_mm"] = 0.05
+    probabilities["left_focal_periventricular_echogenicity"] = 0.05
+    result = grade_prediction(prediction, serial_study_available=True)
+    assert result.evidence.left.confined_to_germinal_matrix == "yes"
+    assert result.classification.left.gmh_ivh == "Grade I GMH-IVH"
+    assert result.feature_decisions["left_confined_to_germinal_matrix"]["source"] == "derived"
+
+
+def test_uncertain_feature_suppresses_only_its_own_domain():
+    """Uncertainty is scoped, not global.
+
+    An intraventricular blood probability sitting on the threshold blocks the
+    left grade, but the right hemisphere and the cerebellum were answered
+    confidently and are still released.
+    """
     prediction = complete_prediction()
     prediction["probabilities"]["left_intraventricular_blood"] = 0.50
     result = grade_prediction(prediction, serial_study_available=True)
     assert result.evidence.left.intraventricular_blood == "unknown"
-    assert result.abstained
-    assert "one or more AI feature decisions are uncertain" in result.abstention_reasons
+    assert not result.domain_status["left_gmh_ivh"].reportable
+    assert result.domain_status["right_gmh_ivh"].reportable
+    assert result.domain_status["cerebellar_hemorrhage"].reportable
+    assert not result.abstained
+    assert any("dead band" in reason for reason in result.domain_status["left_gmh_ivh"].reasons)
 
 
-def test_missing_serial_evidence_forces_final_grade_abstention():
+def test_serial_dependent_domains_are_withheld_without_a_serial_study():
+    """WMI grade and PHVD are defined by change over time.
+
+    Without a second time point they are withheld, while the hemorrhage grades
+    from this single study are still reported.
+    """
     result = grade_prediction(complete_prediction(), serial_study_available=False)
+    assert not result.domain_status["wmi"].reportable
+    assert not result.domain_status["phvd"].reportable
+    assert result.domain_status["left_gmh_ivh"].reportable
+    assert not result.abstained
+
+
+def test_absent_posterior_fossa_withholds_only_cerebellar_hemorrhage():
+    prediction = complete_prediction()
+    prediction["plane_counts"] = {"coronal": 8, "sagittal": 8, "posterior_fossa": 0}
+    result = grade_prediction(prediction, serial_study_available=True)
+    assert not result.domain_status["cerebellar_hemorrhage"].reportable
+    assert result.domain_status["left_gmh_ivh"].reportable
+
+
+def test_study_abstains_only_when_no_domain_survives():
+    prediction = complete_prediction()
+    prediction["probabilities"] = {}
+    prediction["plane_counts"] = {"coronal": 0, "sagittal": 0, "posterior_fossa": 0}
+    result = grade_prediction(prediction, serial_study_available=False)
     assert result.abstained
-    assert "serial evidence was not supplied for WMI evolution and PHVD trajectory" in result.abstention_reasons
+    assert result.reportable_domains == []
+    assert result.abstention_reasons
