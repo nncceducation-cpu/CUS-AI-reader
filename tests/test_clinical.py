@@ -87,6 +87,7 @@ def test_wmi_and_phvd_thresholds_are_serial_domains():
 def test_final_status_requires_verified_planes_and_serial_domains():
     evidence = StudyEvidence(
         study_code="G",
+        postnatal_age_days=14,
         left=side(confined_to_germinal_matrix="yes", intraventricular_blood="no"),
         right=blank_right(),
         wmi_pattern="none",

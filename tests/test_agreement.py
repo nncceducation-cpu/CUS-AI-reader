@@ -25,8 +25,9 @@ def test_agreement_rows_and_raw_csv_exports():
     ai = classification("Grade II GMH-IVH")
     rows = compare_classifications(expert, ai)
     summary = agreement_summary(rows)
-    assert summary["domains_compared"] == 10
-    assert summary["domains_agreeing"] == 9
+    # An unestablished severe-injury criterion is not an assessed negative.
+    assert summary["domains_compared"] == 9
+    assert summary["domains_agreeing"] == 8
     prediction = {
         "model_id": "test",
         "frame_predictions": [

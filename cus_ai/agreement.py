@@ -33,20 +33,25 @@ def compare_classifications(expert: dict[str, Any], ai: dict[str, Any]) -> list[
     for domain, path in AGREEMENT_FIELDS.items():
         expert_value = _get(expert, path)
         ai_value = _get(ai, path)
+        def assessed(value: Any) -> bool:
+            return isinstance(value, str) and not value.startswith(("Not assessed", "Indeterminate", "No severe-injury criterion established"))
+        comparable = assessed(expert_value) and assessed(ai_value)
         rows.append(
             {
                 "domain": domain,
                 "expert": expert_value,
                 "ai": ai_value,
-                "agreement": expert_value == ai_value,
+                "agreement": expert_value == ai_value if comparable else None,
+                "comparable": comparable,
             }
         )
     return rows
 
 
 def agreement_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    total = len(rows)
-    agreements = sum(bool(row["agreement"]) for row in rows)
+    compared_rows = [row for row in rows if row.get("comparable", True) and row.get("agreement") is not None]
+    total = len(compared_rows)
+    agreements = sum(bool(row["agreement"]) for row in compared_rows)
     return {
         "domains_compared": total,
         "domains_agreeing": agreements,

@@ -32,7 +32,7 @@ from cus_ai.reporting import build_report, report_to_markdown
 from cus_ai.schemas import SideEvidence, StudyEvidence
 
 
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.7.0"
 ROOT = Path(__file__).parent
 MODEL_DIR = ROOT / "models"
 CORRECTION_PATH = ROOT / "data" / "corrections.jsonl"
@@ -122,6 +122,10 @@ def side_form(side: str) -> SideEvidence:
         "Abnormal white matter echogenicity is brighter than choroid plexus",
         f"{side}_brighter",
     )
+    inhomogeneous = answer_select(
+        "White matter echogenicity is inhomogeneous (also abnormal under the paper's PVE definition)",
+        f"{side}_inhomogeneous",
+    )
     cystic_options = {
         "Not assessed": "not_assessed",
         "No porencephalic cyst": "none",
@@ -141,6 +145,7 @@ def side_form(side: str) -> SideEvidence:
         ahw_above_10_mm=("yes" if ahw > 10 else "no") if ahw is not None else "unknown",
         adjacent_periventricular_echogenicity=pve,  # type: ignore[arg-type]
         echogenicity_brighter_than_choroid=brighter,  # type: ignore[arg-type]
+        echogenicity_inhomogeneous=inhomogeneous,  # type: ignore[arg-type]
         cystic_change=cystic_options[cystic_label],
         clinician_verified=verified,
     )
@@ -180,7 +185,7 @@ def render_media_tab() -> tuple[list[MediaFrame], list[dict], list[str]]:
     preview_limit = st.slider("Maximum frame thumbnails shown", 8, 64, 24, 8)
     uploads = st.file_uploader(
         "Cranial ultrasound media",
-        type=["png", "jpg", "jpeg", "bmp", "tif", "tiff", "gif", "dcm", "dicom", "mp4", "mov", "avi", "mkv", "webm", "m4v"],
+        type=["png", "jpg", "jpeg", "bmp", "tif", "tiff", "gif", "dcm", "dicom", "mp4", "mov", "avi", "mkv", "webm", "m4v", "nii", "gz"],
         accept_multiple_files=True,
     )
     all_frames: list[MediaFrame] = []
@@ -761,7 +766,7 @@ def render_report_tab(media_summary: list[dict]) -> None:
         a, b, c_metric = st.columns(3)
         a.metric("Domains compared", summary["domains_compared"])
         b.metric("Exact agreements", summary["domains_agreeing"])
-        c_metric.metric("Percent agreement", f"{summary['percent_agreement']:.1f}%")
+        c_metric.metric("Percent agreement", f"{summary['percent_agreement']:.1f}%" if summary['percent_agreement'] is not None else "Not available")
         st.dataframe(agreement_rows, width="stretch", hide_index=True)
         st.caption(
             "This is within-study exact agreement. Domain-specific Cohen kappa requires multiple independently graded studies."
@@ -828,9 +833,10 @@ def render_report_tab(media_summary: list[dict]) -> None:
 
 
 def render_learning_tab() -> None:
-    st.subheader("5. Correct the AI and retrain")
+    st.subheader("5. Record corrections and fit decision settings")
     st.write(
-        "Record what the AI got wrong, and the decision thresholds and calibration are refitted "
+        "Record independent expert findings to refit decision thresholds and calibration. "
+        "This does not train the image-recognition model. Settings are fitted "
         "from your own reads. Nothing changes unless the refit beats the current settings on "
         "studies it was not fitted to."
     )
@@ -1084,7 +1090,7 @@ st.markdown(
 )
 
 media_tab, ai_tab, evidence_tab, report_tab, learning_tab = st.tabs(
-    ["Media", "AI grading", "Expert grading", "Agreement and export", "Correct and retrain"]
+    ["Media", "AI grading", "Expert grading", "Agreement and export", "Corrections and calibration"]
 )
 with media_tab:
     frames, media_summary, _ = render_media_tab()

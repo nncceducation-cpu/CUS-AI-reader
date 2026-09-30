@@ -1,4 +1,4 @@
-name: Publish documentation to GitHub Pages
+name: Publish browser reader to GitHub Pages
 
 on:
   push:
@@ -33,7 +33,6 @@ jobs:
         run: |
           mkdir -p site
           cp -r docs/* site/
-          cp docs/RELEASE-v0.6.0.html site/index.html
           touch site/.nojekyll
 
       - uses: actions/upload-pages-artifact@v3

@@ -20,6 +20,7 @@ class SideEvidence:
     ahw_above_10_mm: Answer = "unknown"
     adjacent_periventricular_echogenicity: Answer = "unknown"
     echogenicity_brighter_than_choroid: Answer = "unknown"
+    echogenicity_inhomogeneous: Answer = "unknown"
     cystic_change: str = "not_assessed"
     clinician_verified: bool = False
 

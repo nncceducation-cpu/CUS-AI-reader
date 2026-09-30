@@ -46,6 +46,7 @@ def test_echogenicity_not_brighter_than_choroid_is_physiologic():
         left=bleeding(
             adjacent_periventricular_echogenicity="yes",
             echogenicity_brighter_than_choroid="no",
+            echogenicity_inhomogeneous="no",
         ),
         right=clean(),
     )

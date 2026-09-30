@@ -15,8 +15,9 @@ from PIL import Image, ImageOps, ImageSequence
 # clip can run to two thousand frames, so holding every frame as full-size RGB
 # costs gigabytes and will exhaust a clinical workstation before the study is
 # even graded. The model resizes to its manifest input size in grayscale anyway,
-# and the quality metrics are computed on grayscale, so nothing that feeds a
-# decision is lost by storing frames at the working size. Native dimensions are
+# and the quality metrics are computed on grayscale. Downsampling may obscure
+# small lesions; this setting must match the model's validated preprocessing.
+# Native dimensions are
 # recorded in technical metadata so the audit trail keeps the true acquisition.
 DEFAULT_WORKING_EDGE = 512
 MIN_WORKING_EDGE = 256
@@ -31,9 +32,8 @@ class DecodeLimits:
     """Memory budget for one decoded source.
 
     ``working_edge`` bounds the longest side of every stored frame. ``max_frames``
-    is a hard ceiling that, when exceeded, samples uniformly across the sweep and
-    records that it did so, because a sampled study can no longer claim that every
-    frame was processed.
+    is a hard ceiling for clips. Exceeding it rejects the source rather than
+    sampling frames. Increase it to run exhaustive inference.
     """
 
     working_edge: int = DEFAULT_WORKING_EDGE
@@ -91,7 +91,9 @@ def _to_uint8(array: np.ndarray) -> np.ndarray:
 
 
 def _pil_from_array(array: np.ndarray) -> Image.Image:
-    x = _to_uint8(array)
+    # Preserve scanner-rendered 8-bit intensities. Frame-wise percentile
+    # stretching changes the relative brightness used to assess echogenicity.
+    x = np.asarray(array) if np.asarray(array).dtype == np.uint8 else _to_uint8(array)
     if x.ndim == 2:
         return Image.fromarray(x, mode="L").convert("RGB")
     if x.ndim == 3 and x.shape[-1] in (3, 4):
@@ -102,6 +104,8 @@ def _pil_from_array(array: np.ndarray) -> Image.Image:
 def _decode_image(name: str, data: bytes, limits: DecodeLimits) -> IngestResult:
     image = Image.open(io.BytesIO(data))
     source_frame_count = int(getattr(image, "n_frames", 1) or 1)
+    if limits.max_frames and source_frame_count > limits.max_frames:
+        raise ValueError("Frame budget exceeded; exhaustive decoding is required.")
     native_size: tuple[int, int] | None = None
     frames: list[MediaFrame] = []
     for index, frame in enumerate(ImageSequence.Iterator(image)):
@@ -152,7 +156,9 @@ def _decode_dicom(name: str, data: bytes, limits: DecodeLimits) -> IngestResult:
     if spacing is None:
         warnings.append("DICOM pixel spacing is absent. Automated metric measurements must remain disabled.")
 
-    if array.ndim == 2:
+    if technical["number_of_frames"] > 1:
+        arrays = [(index, array[index]) for index in range(array.shape[0])]
+    elif array.ndim == 2:
         arrays = [(0, array)]
     elif array.ndim == 3 and array.shape[-1] in (3, 4):
         arrays = [(0, array)]
@@ -162,6 +168,8 @@ def _decode_dicom(name: str, data: bytes, limits: DecodeLimits) -> IngestResult:
         arrays = [(0, array)]
 
     technical["working_edge"] = limits.working_edge
+    if limits.max_frames and len(arrays) > limits.max_frames:
+        raise ValueError("Frame budget exceeded; exhaustive decoding is required.")
     technical["decoded_frame_count"] = len(arrays)
     technical["all_frames_processed"] = len(arrays) == technical["number_of_frames"]
     if not technical["all_frames_processed"]:
@@ -169,17 +177,24 @@ def _decode_dicom(name: str, data: bytes, limits: DecodeLimits) -> IngestResult:
             "Decoded frame count does not match the DICOM NumberOfFrames value. The examination is incomplete."
         )
 
-    frames = [
-        MediaFrame(
+    frames = []
+    for index, frame in arrays:
+        native_image = _pil_from_array(frame)
+        working_image = to_working_size(native_image, limits.working_edge)
+        working_spacing = None
+        if spacing:
+            working_spacing = (
+                spacing[0] * native_image.height / working_image.height,
+                spacing[1] * native_image.width / working_image.width,
+            )
+        frames.append(MediaFrame(
             source_name=name,
             frame_index=index,
-            image=to_working_size(_pil_from_array(frame), limits.working_edge),
+            image=working_image,
             media_type="dicom",
-            pixel_spacing_mm=spacing,
+            pixel_spacing_mm=working_spacing,
             technical_metadata=technical,
-        )
-        for index, frame in arrays
-    ]
+        ))
     return IngestResult(frames=frames, warnings=warnings, technical_metadata=technical)
 
 
@@ -207,7 +222,12 @@ def _decode_video_path(name: str, path: Path, limits: DecodeLimits) -> IngestRes
         raise ValueError("The video container could not be opened.")
     total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = float(capture.get(cv2.CAP_PROP_FPS) or 0)
-    stride = limits.stride_for(total) if total > 0 else 1
+    # A diagnostic decode never samples around a memory limit. Reject the
+    # source rather than silently discarding a short run containing a lesion.
+    if limits.max_frames and total > limits.max_frames:
+        capture.release()
+        raise ValueError("Clip exceeds frame budget; every-frame processing is required. Increase the budget.")
+    stride = 1
 
     frames: list[MediaFrame] = []
     native_size: tuple[int, int] | None = None
@@ -218,6 +238,9 @@ def _decode_video_path(name: str, path: Path, limits: DecodeLimits) -> IngestRes
         if not ok:
             break
         read_count += 1
+        if limits.max_frames and read_count > limits.max_frames:
+            capture.release()
+            raise ValueError("Clip exceeds frame budget; every-frame processing is required. Increase the budget.")
         if stride > 1 and source_index % stride:
             source_index += 1
             continue
@@ -280,6 +303,49 @@ def _decode_video_path(name: str, path: Path, limits: DecodeLimits) -> IngestRes
     )
 
 
+def _decode_nifti_path(name: str, path: Path, limits: DecodeLimits) -> IngestResult:
+    import nibabel as nib
+
+    volume = nib.load(str(path))
+    data = np.asanyarray(volume.dataobj)
+    if data.ndim == 4 and data.shape[3] == 1:
+        data = data[..., 0]
+    if data.ndim == 2:
+        data = data[..., None]
+    if data.ndim != 3:
+        raise ValueError("NIfTI must be a 2D image or 3D sequence; resolve additional axes before upload.")
+    count = data.shape[2]
+    if limits.max_frames and count > limits.max_frames:
+        raise ValueError("Frame budget exceeded; exhaustive decoding is required.")
+    if not np.isfinite(data).all():
+        raise ValueError("NIfTI contains non-finite intensities.")
+    # One common display scale preserves relative intensity across the sequence.
+    low, high = float(data.min()), float(data.max())
+    technical = {
+        "source_shape": list(volume.shape), "source_frame_count": count,
+        "decoded_frame_count": count, "all_frames_processed": True,
+        "sequence_axis": 2, "axis_interpretation_verified": False,
+        "modality_verified": False, "header_spacing": list(map(float, volume.header.get_zooms())),
+        "header_units": list(volume.header.get_xyzt_units()),
+        "intensity_range": [low, high], "working_edge": limits.working_edge,
+    }
+    frames = []
+    for index in range(count):
+        pixels = data[:, :, index].T
+        if low >= 0 and high <= 255 and np.equal(data.dtype.kind, 'i'):
+            pixels = pixels.astype(np.uint8)
+        elif data.dtype == np.uint8:
+            pixels = pixels.astype(np.uint8)
+        else:
+            pixels = (np.clip((pixels.astype(float) - low) / max(high - low, 1), 0, 1) * 255).astype(np.uint8)
+        frames.append(MediaFrame(name, index, to_working_size(Image.fromarray(pixels), limits.working_edge),
+                                 "nifti", technical_metadata=technical))
+    return IngestResult(frames, [
+        "NIfTI axis 3 is displayed in stored order; confirm this is an ultrasound sequence rather than MRI or a spatial volume.",
+        "NIfTI header spacing is unverified; automated metric measurements remain disabled.",
+    ], technical)
+
+
 def decode_media_path(
     path: str | Path, limits: DecodeLimits | None = None
 ) -> IngestResult:
@@ -296,6 +362,8 @@ def decode_media_path(
     if not source.exists():
         raise FileNotFoundError(f"No such media file: {source}")
     suffix = source.suffix.lower()
+    if source.name.lower().endswith((".nii", ".nii.gz")):
+        return _decode_nifti_path(source.name, source, limits)
     if suffix in VIDEO_SUFFIXES:
         return _decode_video_path(source.name, source, limits)
     return decode_media(source.name, source.read_bytes(), limits)
@@ -308,6 +376,15 @@ def decode_media(
     if not data:
         raise ValueError("The uploaded file is empty.")
     suffix = Path(name).suffix.lower()
+    if name.lower().endswith((".nii", ".nii.gz")):
+        suffix = ".nii.gz" if name.lower().endswith(".gz") else ".nii"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp:
+            temp.write(data)
+            path = Path(temp.name)
+        try:
+            return _decode_nifti_path(name, path, limits)
+        finally:
+            path.unlink(missing_ok=True)
     if suffix in IMAGE_SUFFIXES:
         return _decode_image(name, data, limits)
     if suffix in VIDEO_SUFFIXES:

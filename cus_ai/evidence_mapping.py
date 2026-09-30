@@ -161,7 +161,9 @@ def side_evidence_from_probabilities(
     working = dict(probabilities)
     if direct_label not in working:
         union_value = _union(working, (gmh_label, ivh_label))
-        if union_value is not None:
+        # A missing head is not a negative finding. One positive head proves
+        # hemorrhage; one negative head cannot exclude the other compartment.
+        if union_value is not None and (gmh_label in working and ivh_label in working or union_value >= thresholds.get(direct_label, DEFAULT_THRESHOLD) + margin):
             working[direct_label] = union_value
 
     hemorrhage = decide(
@@ -188,7 +190,7 @@ def side_evidence_from_probabilities(
         confined = decide(
             confined_key, confined_key, probabilities, thresholds, margin, decisions
         )
-    elif hemorrhage == "yes" and intraventricular == "no":
+    elif hemorrhage == "yes" and intraventricular == "no" and working.get(gmh_label, 0.0) >= thresholds.get(gmh_label, DEFAULT_THRESHOLD) + margin:
         confined = _derive(
             confined_key,
             "yes",
@@ -284,6 +286,7 @@ def side_evidence_from_probabilities(
         ahw_above_10_mm=ahw10,
         adjacent_periventricular_echogenicity=echogenicity,
         echogenicity_brighter_than_choroid=brighter,
+        echogenicity_inhomogeneous=(decide(prefix + "echogenicity_inhomogeneous", prefix + "echogenicity_inhomogeneous", probabilities, thresholds, margin, decisions) if prefix + "echogenicity_inhomogeneous" in probabilities else "unknown"),
         cystic_change=cystic_change,
         clinician_verified=False,
     )

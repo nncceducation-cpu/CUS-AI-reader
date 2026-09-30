@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+import math
 
 from .clinical import classify_study
 from .evidence_mapping import (
@@ -191,6 +192,8 @@ def grade_prediction(
         name: float(value) for name, value in (prediction.get("probabilities") or {}).items()
     }
     threshold_map = thresholds or {}
+    if any(not math.isfinite(value) or value < 0 or value > 1 for value in probabilities.values()):
+        raise ValueError("Consensus features must be finite probabilities between 0 and 1.")
     decisions: dict[str, Decision] = {}
 
     left = side_evidence_from_probabilities(
@@ -207,11 +210,11 @@ def grade_prediction(
         "cerebellar_hemorrhage", probabilities, CBH_LABELS, threshold_map, decision_margin, decisions, "not_assessed"
     )
 
-    prior = (
-        "yes"
-        if "yes" in {left.hemorrhage_present, right.hemorrhage_present}
-        else ("no" if left.hemorrhage_present == right.hemorrhage_present == "no" else "unknown")
-    )
+    # A current-frame hemorrhage head cannot establish preceding hemorrhage.
+    # Only longitudinal, explicitly supplied history may answer this field.
+    prior = prediction.get("prior_gmh_ivh", "unknown")
+    if prior not in {"yes", "no", "unknown"}:
+        prior = "unknown"
     vi97 = _decide_simple(
         "vi_above_97th", probabilities, threshold_map, decision_margin, decisions
     )
@@ -236,10 +239,10 @@ def grade_prediction(
         prior_gmh_ivh=prior,  # type: ignore[arg-type]
         vi_above_97th=vi97,
         vi_above_97th_plus_4mm=vi97p4,
-        coronal_views_complete=coronal,
-        sagittal_views_complete=sagittal,
-        posterior_fossa_views_complete=posterior,
-        complete_required_views=coronal and sagittal and posterior,
+        coronal_views_complete=bool(prediction.get("verified_view_coverage", {}).get("coronal", False)) and coronal,
+        sagittal_views_complete=bool(prediction.get("verified_view_coverage", {}).get("sagittal", False)) and sagittal,
+        posterior_fossa_views_complete=bool(prediction.get("verified_view_coverage", {}).get("posterior_fossa", False)) and posterior,
+        complete_required_views=False,
         all_frames_processed=all_frames_processed,
         decoded_frame_count=int(prediction.get("processed_frame_count") or 0),
         serial_study_available=serial_study_available,
@@ -256,6 +259,47 @@ def grade_prediction(
         domain: _assess_domain(domain, decisions, plane_counts, serial_study_available, conflicts)
         for domain in DOMAIN_REQUIREMENTS
     }
+
+    global_reasons = []
+    if not all_frames_processed:
+        global_reasons.append("complete sequential frame processing was not confirmed")
+    if prediction.get("abstained", False):
+        global_reasons.extend(prediction.get("abstention_reasons") or ["upstream model abstained"])
+    if prediction.get("model_type") == "pilot_similarity" or prediction.get("aggregation_mode") == "pilot_similarity_vote":
+        global_reasons.append("reference similarity cannot establish consensus imaging features")
+
+    for domain, status in domain_status.items():
+        reasons = list(global_reasons)
+        if domain.endswith("gmh_ivh"):
+            side = left if domain.startswith("left") else right
+            side_class = classification.left if domain.startswith("left") else classification.right
+            if "Indeterminate" in side_class.gmh_ivh:
+                reasons.append("GMH-IVH criteria remain indeterminate, including acute distension and AHW")
+        elif domain.endswith("pvhi"):
+            side_class = classification.left if domain.startswith("left") else classification.right
+            if side_class.pvhi.startswith("Indeterminate"):
+                reasons.append("PVHI criteria remain indeterminate")
+        elif domain == "phvd" and (prior == "unknown" or postnatal_age_days is None):
+            reasons.append("PHVD requires preceding hemorrhage history and postnatal age")
+        if reasons:
+            status.reportable = False
+            status.confidence = 0.0
+            status.reasons = list(dict.fromkeys(status.reasons + reasons))
+
+    # Withheld results must remain withheld in the UI, exports and agreement
+    # tables; hiding only the banner leaves a plausible grade visible below it.
+    for side_name in ("left", "right"):
+        side_class = getattr(classification, side_name)
+        if not domain_status[f"{side_name}_gmh_ivh"].reportable:
+            side_class.gmh_ivh = "Not assessed: AI withheld this domain"
+        if not domain_status[f"{side_name}_pvhi"].reportable:
+            side_class.pvhi = "Not assessed: AI withheld this domain"
+        side_class.cystic_sequela = "Not assessed: requires verified serial evidence"
+    for domain, attribute in (("wmi", "wmi"), ("cerebellar_hemorrhage", "cerebellar_hemorrhage"), ("phvd", "phvd")):
+        if not domain_status[domain].reportable:
+            setattr(classification, attribute, "Not assessed: AI withheld this domain")
+    if global_reasons or not all(status.reportable for status in domain_status.values()):
+        classification.severe_preterm_brain_injury_flag = "Not assessed: incomplete or withheld AI domains"
 
     missing = sorted(
         name

@@ -17,6 +17,7 @@ jsonschema-specifications==2025.9.1
 MarkupSafe==3.0.3
 narwhals==2.25.0
 numpy==2.5.2
+nibabel==5.4.2
 onnxruntime==1.29.0
 opencv-python-headless==4.14.0.94
 packaging==26.3

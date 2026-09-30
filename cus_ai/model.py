@@ -248,6 +248,11 @@ def build_study_prediction(
     Kept separate from the ONNX adapter so that the scoring path can be tested,
     replayed, and benchmarked without loading a runtime.
     """
+    frame_values = np.asarray(frame_values)
+    if frame_values.shape != (len(frames), len(manifest.labels)):
+        raise ValueError("Model must return exactly one label row for every supplied frame.")
+    if not np.isfinite(frame_values).all() or np.any(frame_values < 0) or np.any(frame_values > 1):
+        raise ValueError("Model outputs must be finite probabilities between 0 and 1.")
     calibration = manifest.calibration
     plane_counts = {"coronal": 0, "sagittal": 0, "posterior_fossa": 0, "other": 0, "indeterminate": 0}
     frame_predictions: list[FramePrediction] = []
@@ -303,6 +308,10 @@ def build_study_prediction(
             probabilities_by_plane[plane] = plane_view
 
     reasons: list[str] = []
+    if any(frame.media_type == "nifti" and
+           (not frame.technical_metadata.get("modality_verified") or
+            not frame.technical_metadata.get("axis_interpretation_verified")) for frame in frames):
+        reasons.append("NIfTI modality and sequence-axis interpretation require verification")
     if not manifest.validated:
         reasons.append("manifest marks model as unvalidated")
     if plane_counts["coronal"] == 0:
@@ -520,51 +529,6 @@ class PilotSimilarityModel:
             }
         return domains, nearest
 
-    @staticmethod
-    def _sum_probability(distribution: dict[str, float], values: set[str]) -> float | None:
-        if not distribution:
-            return None
-        return float(sum(distribution.get(value, 0.0) for value in values))
-
-    def _domains_to_features(self, domains: dict[str, dict[str, Any]]) -> dict[str, float]:
-        output: dict[str, float] = {}
-        for side in ("left", "right"):
-            gmh = domains[f"{side}_gmh_ivh"]["probabilities"]
-            if gmh:
-                output[f"{side}_hemorrhage_present"] = self._sum_probability(
-                    gmh, {"grade_1", "grade_2", "grade_3"}
-                ) or 0.0
-                output[f"{side}_confined_to_germinal_matrix"] = float(gmh.get("grade_1", 0.0))
-                output[f"{side}_intraventricular_blood"] = self._sum_probability(
-                    gmh, {"grade_2", "grade_3"}
-                ) or 0.0
-                output[f"{side}_ventricular_distension"] = float(gmh.get("grade_3", 0.0))
-                output[f"{side}_ahw_above_6_mm"] = float(gmh.get("grade_3", 0.0))
-            pvhi = domains[f"{side}_pvhi"]["probabilities"]
-            if pvhi:
-                output[f"{side}_focal_periventricular_echogenicity"] = self._sum_probability(
-                    pvhi, {"present", "evolved"}
-                ) or 0.0
-            cyst = domains[f"{side}_porencephalic_cyst"]["probabilities"]
-            if cyst:
-                output[f"{side}_porencephalic_cyst"] = float(cyst.get("present", 0.0))
-        wmi = domains["wmi"]["probabilities"]
-        for value in ("none", "pve_under_7_days", "grade_1", "grade_2", "grade_3", "grade_4"):
-            if wmi:
-                output[f"wmi_{value}"] = float(wmi.get(value, 0.0))
-        cbh = domains["cerebellar_hemorrhage"]["probabilities"]
-        for value in ("none", "punctate", "limited", "large"):
-            if cbh:
-                output[f"cbh_{value}"] = float(cbh.get(value, 0.0))
-        phvd = domains["phvd"]["probabilities"]
-        if phvd:
-            output["vi_above_97th"] = self._sum_probability(phvd, {"moderate", "severe"}) or 0.0
-            output["vi_above_97th_plus_4_mm"] = float(phvd.get("severe", 0.0))
-        severe = domains["severe_preterm_brain_injury"]["probabilities"]
-        if severe:
-            output["severe_preterm_brain_injury"] = float(severe.get("yes", 0.0))
-        return output
-
     def predict(
         self, frames: list[MediaFrame], source_hashes: list[str] | None = None
     ) -> StudyPrediction:
@@ -619,7 +583,10 @@ class PilotSimilarityModel:
             matched_studies = self.study_codes[matched_indices].tolist()
             mode = "patient_held_out_for_known_pilot_media"
         domains, nearest = self._vote_domains(signature, allowed)
-        probabilities = self._domains_to_features(domains)
+        # Similarity votes are reference-retrieval scores, not observations of
+        # hemorrhage, distension or millimetre measurements. Retain the votes for
+        # audit without manufacturing lesion evidence from a neighbour's grade.
+        probabilities = {}
         reasons = ["manifest marks model as unvalidated"]
         if plane_counts["coronal"] == 0:
             reasons.append("no accepted coronal frame")
@@ -654,6 +621,22 @@ class PilotSimilarityModel:
 def load_model(
     model_dir: str | Path, manifest: ModelManifest
 ) -> OnnxFeatureModel | PilotSimilarityModel:
+    root = Path(model_dir).resolve()
+    artifacts = [(manifest.onnx_file, manifest.onnx_sha256)]
+    if manifest.model_type == "pilot_similarity":
+        if not manifest.prototype_file:
+            raise ValueError("Pilot prototype file is required.")
+        artifacts.append((manifest.prototype_file, manifest.prototype_sha256))
+    for filename, expected_hash in artifacts:
+        path = (root / filename).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError("Model artifacts must be inside the selected model directory.")
+        if not path.is_file():
+            raise ValueError(f"Model artifact is missing: {filename}")
+        if expected_hash and _sha256(path) != expected_hash.lower():
+            raise ValueError(f"Model artifact failed SHA256 verification: {filename}")
+    if manifest.model_type == "onnx_feature" and manifest.preprocessing != "grayscale_resize":
+        raise ValueError("Unsupported feature-model preprocessing; install the matching adapter.")
     if manifest.model_type == "pilot_similarity":
         return PilotSimilarityModel(model_dir, manifest)
     if manifest.model_type != "onnx_feature":
@@ -665,6 +648,7 @@ def prediction_to_json(prediction: StudyPrediction) -> dict[str, Any]:
     return {
         "model_id": prediction.model_id,
         "model_version": prediction.model_version,
+        "model_type": "pilot_similarity" if prediction.aggregation_mode == "pilot_similarity_vote" else "onnx_feature",
         "processed_frame_count": prediction.processed_frame_count,
         "plane_counts": prediction.plane_counts,
         "probabilities": prediction.probabilities,

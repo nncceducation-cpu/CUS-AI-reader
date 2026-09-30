@@ -60,8 +60,10 @@ def _abnormal_echogenicity(e: SideEvidence) -> str:
         return "no"
     if e.adjacent_periventricular_echogenicity == "unknown":
         return "unknown"
+    if e.echogenicity_inhomogeneous == "yes":
+        return "yes"
     if e.echogenicity_brighter_than_choroid == "no":
-        return "physiologic"
+        return "physiologic" if e.echogenicity_inhomogeneous == "no" else "unknown"
     return "yes"
 
 
@@ -183,6 +185,10 @@ def _classify_side(e: SideEvidence) -> SideClassification:
                     "Intraventricular blood acutely distends the ipsilateral ventricle and the "
                     "recorded AHW threshold is above 6 mm."
                 )
+        elif e.ventricular_distension == "no" or (e.ahw_mm is not None and e.ahw_mm <= 6) or (e.ahw_mm is None and e.ahw_above_6_mm == "no"):
+            grade = "Grade II GMH-IVH"
+            complete = True
+            reasoning.append("Intraventricular blood is present and at least one required Grade III criterion is explicitly absent.")
         elif e.ventricular_distension == "unknown" or (
             e.ahw_mm is None and e.ahw_above_6_mm == "unknown"
         ):
@@ -409,6 +415,10 @@ def classify_study(e: StudyEvidence) -> StudyClassification:
     core_complete = (
         e.all_frames_processed
         and e.complete_required_views
+        and e.coronal_views_complete
+        and e.sagittal_views_complete
+        and e.posterior_fossa_views_complete
+        and e.postnatal_age_days is not None
         and e.left.clinician_verified
         and e.right.clinician_verified
         and left.evidence_complete
@@ -421,6 +431,7 @@ def classify_study(e: StudyEvidence) -> StudyClassification:
         and e.prior_gmh_ivh != "unknown"
         and e.vi_above_97th != "unknown"
         and e.vi_above_97th_plus_4mm != "unknown"
+        and not phvd.startswith(("Indeterminate", "Not gradeable"))
     )
     classification_status = (
         "Final consensus classification from complete verified study and serial evidence"

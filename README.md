@@ -1,5 +1,54 @@
 # CUS AI Reader
 
+## Online reader and private model learning: 0.7.0
+
+Open [the browser reader](https://nncceducation-cpu.github.io/CUS-AI-reader/).
+This is now a functioning reader rather than a release-documentation landing page.
+It accepts images, MP4/MOV clips and NIfTI sequences and processes every frame.
+The browser limit is 256 frames per study and 256 MB per source; larger studies
+are rejected without sampling. The Python reader retains broader format support.
+
+1. In **Read a study**, upload de-identified media and confirm its modality and sequence.
+2. In **Add labeled cases**, enter infant/study codes, category and independently
+   verified observable findings. Category prefills require verified laterality;
+   normal prefills require complete examination review. Unknowns stay unknown.
+3. Keep each infant in one partition: training, development holdout or untouched
+   external test. Training requires four infants and two positive and two negative
+   training infants for each feature head that is learned.
+4. In **Train and update**, train a CNN candidate. This changes image-model weights,
+   not only calibration thresholds. Review the saved holdout results.
+5. **Check and activate for research** evaluates the candidate before replacing
+   the active version. Export the private case/model backup before clearing storage.
+
+Source cases, resized learning frames, labels and learned weights stay in IndexedDB
+on the user's browser/device. They are not sent to GitHub, a shared server, or an AI
+API. The page downloads integrity-pinned TensorFlow.js and MP4Box libraries from a
+CDN; it needs connectivity to load those libraries. Private backups can be restored
+on another device. Imported models become candidates and require local re-evaluation.
+
+No validated diagnostic weights are preinstalled. Model outputs are uncalibrated
+research feature scores, not automatic injury grades or a complete normal-study
+assessment. The online verified-evidence form covers GMH-IVH; the Python reader
+provides the full consensus workflow. Clinical rules are fixed and never rewritten
+by training. See `docs/BROWSER_LEARNING.md` for architecture, gates and limitations.
+
+## Accuracy audit update: 0.6.1
+
+The bundled pilot is a 15-examination similarity retriever, not a lesion detector.
+Its nearest-reference votes remain available for workflow auditing, but no longer
+become hemorrhage features, AHW thresholds, or Canadian consensus grades.
+Automatic injury grading requires a separately trained neonatal feature model.
+Images, DICOM objects and clips remain supported, with expert-entered consensus grading.
+NIfTI `.nii` / `.nii.gz` sequences can now be reviewed in stored third-axis order.
+NIfTI modality and axis interpretation are unverified, so automated grades and
+metric measurements remain withheld for these imports.
+
+This update fixes upstream abstention, withheld-result display and agreement,
+current-versus-prior hemorrhage, DICOM scale after resizing, inhomogeneous PVE,
+Grade II boundary logic, invalid feature outputs, and model checksum enforcement.
+See `docs/ACCURACY_AUDIT_2026-09-30.md` for the evidence and development requirements.
+Passing software tests is not evidence of diagnostic accuracy.
+
 CUS AI Reader is a research-use web application for neonatal cranial ultrasound study review. It accepts a single image, an image set, DICOM objects, or cine clips. The app decodes every frame sequentially, performs technical quality checks on every frame, and sends every frame to an installed model. The model contract identifies coronal, sagittal, posterior fossa, other, or indeterminate planes before plane-specific feature aggregation. AI feature decisions and independently entered expert findings enter the same Canadian consensus rule engine. The app displays AI grading, expert grading, exact agreement, and auditable JSON, Markdown, study-level CSV, and every-frame CSV exports.
 
 Version 0.6.0 rebuilds the scoring path between the model and the rule engine: calibrated frame probabilities, persistence-based frame-to-study aggregation, anatomic consistency constraints, derived rather than alias-matched consensus evidence, and abstention scoped to the domain it affects instead of the whole study. The reasoning, the defects it corrects, and the supporting simulation are in `docs/AI_SCORING_ACCURACY.md`.
