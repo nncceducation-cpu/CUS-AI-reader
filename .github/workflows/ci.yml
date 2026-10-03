@@ -20,8 +20,25 @@ jobs:
       - run: python -m pip install -r requirements.txt -r requirements-dev.txt
       - run: python -m compileall -q app.py cus_ai tests
       - run: python -m pytest
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - run: node --test tests/browser_learning.test.mjs
+          cache: npm
 
+      # Dependency-free browser suite: interval statistics, promotion gating,
+      # label algebra, the fixed paper rules, media decoding, and the check
+      # that the committed single-file bundle still matches the modules.
+      - run: node tests/browser_learning.test.mjs
+
+      # TensorFlow.js graph execution on the CPU backend. Separate because it
+      # needs the TensorFlow packages, and because shape reasoning alone does
+      # not catch graph-level faults.
+      - run: npm ci
+      - run: node tests/browser_model.test.mjs
+
+      # The bundle must be reproducible from the modules. The test above
+      # already compares them, so a non-empty diff here means the build is
+      # not deterministic.
+      - run: npm run build
+      - run: git diff --exit-code -- docs/CUS-reader-single-file.html
