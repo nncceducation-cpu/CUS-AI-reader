@@ -29,3 +29,6 @@ Thumbs.db
 # Site-specific learning artefacts, never committed
 data/corrections.jsonl
 models/learned_parameters.json
+
+# Node build/test dependencies for the browser reader
+node_modules/

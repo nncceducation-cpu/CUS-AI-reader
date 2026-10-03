@@ -1,0 +1,18 @@
+{
+  "name": "cus-ai-reader-browser",
+  "version": "0.8.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser reader modules, single-file build and Node tests for the CUS AI Reader.",
+  "scripts": {
+    "build": "node scripts/build_single_file.mjs .",
+    "test": "node tests/browser_learning.test.mjs",
+    "test:model": "node tests/browser_model.test.mjs",
+    "test:all": "npm run test && npm run test:model"
+  },
+  "devDependencies": {
+    "@tensorflow/tfjs-backend-cpu": "4.22.0",
+    "@tensorflow/tfjs-core": "4.22.0",
+    "@tensorflow/tfjs-layers": "4.22.0"
+  }
+}

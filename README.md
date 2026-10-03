@@ -1,6 +1,6 @@
 # CUS AI Reader
 
-## Online reader and private model learning: 0.7.0
+## Online reader and private model learning: 0.8.0
 
 Open [the browser reader](https://nncceducation-cpu.github.io/CUS-AI-reader/).
 This is now a functioning reader rather than a release-documentation landing page.
