@@ -1,0 +1,9 @@
+# Normalise line endings to LF in the repository and on checkout for every
+# platform. This is load-bearing, not cosmetic: docs/CUS-reader-single-file.html
+# pins SHA-256 hashes of its own inline script and style in its
+# Content-Security-Policy, and any newline rewriting invalidates them, which
+# blocks the entire page with nothing but a console message.
+* text=auto eol=lf
+
+# Belt and braces for the generated bundle: never let git touch its bytes.
+docs/CUS-reader-single-file.html -text

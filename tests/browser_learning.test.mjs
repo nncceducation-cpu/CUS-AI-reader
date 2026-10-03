@@ -340,4 +340,12 @@ test('the committed single-file edition is in sync with the modules', async () =
  const hash = `'sha256-${createHash('sha256').update(inline, 'utf8').digest('base64')}'`;
  assert.ok(committed.includes(hash), 'CSP script hash does not match the inline script');
  assert.ok(!/assets\//.test(committed), 'the bundle must not reference external assets');
+ // A pinned hash is computed over exact bytes, so any newline rewriting between
+ // here and the browser invalidates it and blocks the whole page. .gitattributes
+ // forces LF; this asserts nothing reintroduced CRLF before the bundle was built.
+ assert.ok(!committed.includes('\r'),
+  'the bundle contains CRLF, which would invalidate its pinned CSP hashes');
+ for (const module of ['core.js', 'media.js', 'store.js', 'learning.js', 'checks.js', 'app.js'])
+  assert.ok(!readFileSync(join(ROOT, 'docs', 'assets', module), 'utf8').includes('\r'),
+   `docs/assets/${module} contains CRLF and would taint the bundle hash`);
 });
